@@ -1,0 +1,107 @@
+{
+  "info": {
+    "name": "Nexxaura — user data only (relative to JWT user)",
+    "description": "Login once, set `token` from the response, then run the GETs. All `/api/data/*` routes return only rows for the authenticated user (`user_id` from token).\n\n**Privacy:** These endpoints do **not** return integration dumps. Responses **exclude** `raw_payload` (appointments, patients, insurance) and **exclude** `raw_snapshot` in Availity/ dashboard bundles. Run the **Tests** tab after each request: the collection asserts those keys are absent in `/api/data/*` JSON.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (String(pm.request.url).indexOf('/api/data/') === -1) { return; }",
+          "if (pm.response.code !== 200) { return; }",
+          "var j; try { j = pm.response.json(); } catch (e) { return; }",
+          "function forbiddenKeys(x, found) {",
+          "  if (x == null) { return; }",
+          "  if (Array.isArray(x)) { for (var i = 0; i < x.length; i++) { forbiddenKeys(x[i], found); } return; }",
+          "  if (typeof x === 'object') {",
+          "    for (var k in x) {",
+          "      if (k === 'raw_payload' || k === 'raw_snapshot') { found.push(k); }",
+          "      forbiddenKeys(x[k], found);",
+          "    }",
+          "  }",
+          "}",
+          "var found = [];",
+          "forbiddenKeys(j, found);",
+          "pm.test('No raw_payload or raw_snapshot in /api/data response', function () {",
+          "  pm.expect(found.length, 'leaked: ' + found.join(', ')).to.equal(0);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Login (set token from response → collection variable `token`)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  const j = pm.response.json();",
+              "  if (j.token) { pm.collectionVariables.set('token', j.token); }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"demo@nexxaura.com\",\n  \"password\": \"demo123\"\n}"
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      }
+    },
+    {
+      "name": "2. Appointments (my user only)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/data/appointments"
+      }
+    },
+    {
+      "name": "3. Patients (my user only)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/data/patients"
+      }
+    },
+    {
+      "name": "4. Patient insurance (my user only)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/data/patient-insurance"
+      }
+    },
+    {
+      "name": "5. Availity summary (my user only)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/data/availity"
+      }
+    },
+    {
+      "name": "6. Dashboard (bundle: appointments + patients + insurance + availity)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/data/dashboard"
+      }
+    }
+  ]
+}

@@ -1,0 +1,249 @@
+{
+  "cookies": [
+    {
+      "name": "amlbcookie",
+      "value": "01",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "pxcts",
+      "value": "ec600f99-38c0-11f1-9e0c-7c7de410c394",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_pxvid",
+      "value": "ec6007e4-38c0-11f1-9e0c-df48492314da",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": 1807789667,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "loginTree",
+      "value": "avLogin",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "sessionAka",
+      "value": "aka58180065542",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "prod-navVersion",
+      "value": "3",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "NPS_3c40fa60_last_seen",
+      "value": "1776254225876",
+      "domain": "essentials.availity.com",
+      "path": "/",
+      "expires": 1784030225,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "OptanonAlertBoxClosed",
+      "value": "2026-04-15T11:57:11.844Z",
+      "domain": ".essentials.availity.com",
+      "path": "/",
+      "expires": 1807790231,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "OptanonConsent",
+      "value": "isGpcEnabled=0&datestamp=Thu+Apr+16+2026+02%3A29%3A18+GMT%2B0500+(Pakistan+Standard+Time)&version=202511.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=4703ba23-0d4e-48c1-8823-2d515cc7677d&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1&intType=1&geolocation=US%3BNY&AwaitingReconsent=false",
+      "domain": ".essentials.availity.com",
+      "path": "/",
+      "expires": 1807824558,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "identity-gateway",
+      "value": "\"6fa59969da924d8c\"",
+      "domain": "essentials.availity.com",
+      "path": "/",
+      "expires": 1777159283.179539,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "3e2c59477f32ed6",
+      "value": "I1EQBj4_xwBHQr05qSXHZcmm6zY.*AAJTSQACMDIAAlNLABw2K2tpeXpBMjIxMkV0dG5PUkxFa0FqVXpZSVk9AAR0eXBlAANDVFMAAlMxAAIwMQ..*",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "XSRF-TOKEN",
+      "value": "a273c65e6fb50876d5754cff6c6a0e2f0d285d703569f57080eb6980e2898dd2",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "IG_SESSIONID",
+      "value": "nihyDbKrH3rBPqnS4FEem8a2dYs",
+      "domain": "essentials.availity.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_px3",
+      "value": "c9c6631fcc295a511a4ffc3a07a763ae616853ad19681bb0e01d53fcaf839ad4:vHvsB4KuwNpZ9IE0K7ZuD2AeELlJRjOd6Dzbyr0cGnKvz702q4cqrBPGeoQKUkpC0X1CpJ2vWnucceY81OFO2g==:1000:1knD7Q3BuK4Fqx0RLmiUA3CGwvMTjt+CEOZA5GuLb2t2yc9mkhJFFRgrjmeVDdNlWkxxj8V46WtMZjAstAyobpjVh9VlgIl3o8qYkpCDo/P4O+SkmwO4mwgIBOgNu730LCq7gAPlYm3y6ozi0V4qAy9gy0p7Urw3R9IhDXUhykZ/Dpt3gUZAuXaaIlI6z2L7S64fQQY+ZKvoiVDsP3PzqFD27i0EH32U6UieO4Bf6L2EaGN8BqsmsT7iP6e5ef4OLwvBcP67q3rDl9uk+1XHax3StRzfAY0SkTFY0lU0paS4dCfRq9nqjhC6hB0IF+11X7x6DoegmMzaPD61HBEvw6GFYC8Kaa3fSyQN3rOP5kWualM5pMpTlZyn57uWCmrcZiDZiIWUH4UdT/w1HuhAujyrmtmKSZBIBW42he/gkVB6Juh0ShSXrhQo2zVPpuSHlqpwBPQHvIxjNRhAm3OxaKNQR1JTd3lTerFb42uVaTvk7kJCGsFDOGdfI+Jjhr968lDjXCv3x0OmHo7YPwUPlhgI9zXM6O4+tVbySjUXoTU=",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": 1777156039,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_px2",
+      "value": "eyJ1IjoiMjViMmRjNDAtNDBmNS0xMWYxLWFiODEtYTk0Y2ExZGY5NzQ4IiwidiI6ImVjNjAwN2U0LTM4YzAtMTFmMS05ZTBjLWRmNDg0OTIzMTRkYSIsInQiOjE3NzcxNTYwMDU4NjgsImgiOiIyNTJiYzNkYjk4MWU0MWU4NDU4Y2U5YzIwNTE0MTFlOTc1MWNhMTI4YzYyODBkMzk3YmY2MDIwODI4NmY5YjIzIn0=",
+      "domain": ".availity.com",
+      "path": "/",
+      "expires": 1777156039,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://essentials.availity.com",
+      "localStorage": [
+        {
+          "name": "PX2yes24ut_px_fp",
+          "value": "eyJQWDEyNDkyIjoiNjBjOWQxMjQwZmE4MTIwNGI4YTU5MDJhOTZkMjFmYmQiLCJQWDEyNTcwIjoiMTM5ZjgyNWY4OGRkMDYzMmQ0ZDFhMzAzZjRjZmMwNzQiLCJQWDExMzUyIjoiODIyZjc0MmQ5MjQ0YzdkMzNmMjM4YmU5NDJlNWQ5OTQiLCJQWDEyMjkyIjoiV2ViS2l0IiwiUFgxMTgxMSI6W10sIlBYMTE1NjciOiJXZWJLaXQgV2ViR0wiLCJQWDEyMDMyIjoiV2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKSIsIlBYMTE1MzYiOlsiQU5HTEVfaW5zdGFuY2VkX2FycmF5cyIsIkVYVF9ibGVuZF9taW5tYXgiLCJFWFRfY2xpcF9jb250cm9sIiwiRVhUX2NvbG9yX2J1ZmZlcl9oYWxmX2Zsb2F0IiwiRVhUX2RlcHRoX2NsYW1wIiwiRVhUX2Rpc2pvaW50X3RpbWVyX3F1ZXJ5IiwiRVhUX2Zsb2F0X2JsZW5kIiwiRVhUX2ZyYWdfZGVwdGgiLCJFWFRfcG9seWdvbl9vZmZzZXRfY2xhbXAiLCJFWFRfc2hhZGVyX3RleHR1cmVfbG9kIiwiRVhUX3RleHR1cmVfY29tcHJlc3Npb25fYnB0YyIsIkVYVF90ZXh0dXJlX2NvbXByZXNzaW9uX3JndGMiLCJFWFRfdGV4dHVyZV9maWx0ZXJfYW5pc290cm9waWMiLCJFWFRfdGV4dHVyZV9taXJyb3JfY2xhbXBfdG9fZWRnZSIsIkVYVF9zUkdCIiwiS0hSX3BhcmFsbGVsX3NoYWRlcl9jb21waWxlIiwiT0VTX2VsZW1lbnRfaW5kZXhfdWludCIsIk9FU19mYm9fcmVuZGVyX21pcG1hcCIsIk9FU19zdGFuZGFyZF9kZXJpdmF0aXZlcyIsIk9FU190ZXh0dXJlX2Zsb2F0IiwiT0VTX3RleHR1cmVfZmxvYXRfbGluZWFyIiwiT0VTX3RleHR1cmVfaGFsZl9mbG9hdCIsIk9FU190ZXh0dXJlX2hhbGZfZmxvYXRfbGluZWFyIiwiT0VTX3ZlcnRleF9hcnJheV9vYmplY3QiLCJXRUJHTF9ibGVuZF9mdW5jX2V4dGVuZGVkIiwiV0VCR0xfY29sb3JfYnVmZmVyX2Zsb2F0IiwiV0VCR0xfY29tcHJlc3NlZF90ZXh0dXJlX3MzdGMiLCJXRUJHTF9jb21wcmVzc2VkX3RleHR1cmVfczN0Y19zcmdiIiwiV0VCR0xfZGVidWdfcmVuZGVyZXJfaW5mbyIsIldFQkdMX2RlYnVnX3NoYWRlcnMiLCJXRUJHTF9kZXB0aF90ZXh0dXJlIiwiV0VCR0xfZHJhd19idWZmZXJzIiwiV0VCR0xfbG9zZV9jb250ZXh0IiwiV0VCR0xfbXVsdGlfZHJhdyIsIldFQkdMX3BvbHlnb25fbW9kZSJdLCJQWDEyMTQ5IjpbIlsxLCAxXSIsIlsxLCAxMDI0XSIsOCwieWVzIiw4LDI0LDgsMTYsMzIsMTYzODQsMTAyNCwxNjM4NCwxNiwxNjM4NCwzMCwxNiwxNiw0MDk2LCJbMzI3NjcsIDMyNzY3XSIsIm5vX2ZwIiwyMywxMjcsMTI3LDIzLDEyNywxMjcsMjMsMTI3LDEyNywyMywxMjcsMTI3LDIzLDEyNywxMjcsMjMsMTI3LDEyNywyMywxMjcsMTI3LDIzLDEyNywxMjcsMjMsMTI3LDEyNywyMywxMjcsMTI3LDIzLDEyNywxMjcsMjMsMTI3LDEyN10sIlBYMTIzNTIiOiJHb29nbGUgSW5jLiAoSW50ZWwpIiwiUFgxMTQ1NSI6IkFOR0xFIChJbnRlbCwgSW50ZWwoUikgVUhEIEdyYXBoaWNzICgweDAwMDA0NkEzKSBEaXJlY3QzRDExIHZzXzVfMCBwc181XzAsIEQzRDExKSIsIlBYMTE1MzQiOiJXZWJHTCBHTFNMIEVTIDEuMCAoT3BlbkdMIEVTIEdMU0wgRVMgMS4wIENocm9taXVtKSIsIlBYMTI1MDMiOiI5NmZmNDM1YjZlYmFjMjgxN2E0ZDViZmM0NzVhYThlNCIsIlBYMTI1MDIiOiJkYWI4MWNiNDM4ZTliMWVjZDkxNTFhM2JhMzNhODJiOCIsIlBYMTE5MjciOiJiMDBmZTM3NTU1MjM3OTA3ZjQ2OTExZDM1MGJkMzhjYyIsIlBYMTI1NzIiOiI5YTNkY2ExNjBiZTdmNTgwNjkwMTM4NWEzOTJkYWY1YiIsIlBYMTE0NzciOiIxMjYuODY5NzI0Mzg5NDg1NzgiLCJQWDEyMTA5IjoiMmRjZThjNTVjNjg5NzA2N2ZkZjBjNzZkZGY2ZTZkNTAiLCJQWDEyMzYyIjoiOTBiMDRhYmU2ZjUyMWQ3MTNhNDUzNzRjYTFjNDQ5OWYiLCJQWDEyMzU0IjoiNmExNDIzZjFhNmFiNmQ2YmM5ZGU3MTIyZGEwNjk0ZTEiLCJQWDEyNDkxIjoiNzUyM2JmNmU1ZGNhZGNmZmRhZTZiMzA2MzgyN2UzNDUiLCJQWDEyNjIyIjoiMDE2YmViMTdkZDU3YTZlNDQ2YjM2MjY1Mjg0YzBjOWMiLCJQWDEyMTMwIjpbIl9fcmVhY3RSb3V0ZXJWZXJzaW9uIiwiXyIsIiRmZWVkYmFjayJdLCJQWDEyMzUxIjpbIl9yZWFjdExpc3RlbmluZ2g5Zm42bzlxbTc1Il0sIlBYMTEzODYiOlsid2ViZHJpdmVyIl0sIlBYMTI1MjUiOiI1NjZmMjcxYzAwNjVkNGExN2ZiMjZhYzY5MTQxNzdjMiIsIlBYMTI1MjYiOiJkNDFkOGNkOThmMDBiMjA0ZTk4MDA5OThlY2Y4NDI3ZSIsIlBYMTE5NDgiOjEsIlBYMTE5ODYiOnRydWUsIlBYMTIyOTkiOnRydWUsIlBYMTIzMzEiOmZhbHNlLCJQWDExMzE2IjpmYWxzZSwiUFgxMTQ0OCI6dHJ1ZSwiUFgxMjE5NiI6Im1pc3NpbmciLCJQWDEyNDI3IjpbIl9fY29yZS1qc19zaGFyZWRfXyIsIl9fcmVhY3RSb3V0ZXJWZXJzaW9uIiwiXyIsIiRmZWVkYmFjayIsIl9weEFwcElkIiwiXzJ5ZXMyNHV0aGFuZGxlciJdLCJQWDExODQyIjpbIl9yZWFjdExpc3RlbmluZ2g5Zm42bzlxbTc1Il0sIlBYMTI0MzkiOlsiUERGIFZpZXdlcjo6UG9ydGFibGUgRG9jdW1lbnQgRm9ybWF0OjphcHBsaWNhdGlvbi9wZGZ+cGRmOjp0ZXh0L3BkZn5wZGYiLCJDaHJvbWUgUERGIFZpZXdlcjo6UG9ydGFibGUgRG9jdW1lbnQgRm9ybWF0OjphcHBsaWNhdGlvbi9wZGZ+cGRmOjp0ZXh0L3BkZn5wZGYiLCJDaHJvbWl1bSBQREYgVmlld2VyOjpQb3J0YWJsZSBEb2N1bWVudCBGb3JtYXQ6OmFwcGxpY2F0aW9uL3BkZn5wZGY6OnRleHQvcGRmfnBkZiIsIk1pY3Jvc29mdCBFZGdlIFBERiBWaWV3ZXI6OlBvcnRhYmxlIERvY3VtZW50IEZvcm1hdDo6YXBwbGljYXRpb24vcGRmfnBkZjo6dGV4dC9wZGZ+cGRmIiwiV2ViS2l0IGJ1aWx0LWluIFBERjo6UG9ydGFibGUgRG9jdW1lbnQgRm9ybWF0OjphcHBsaWNhdGlvbi9wZGZ+cGRmOjp0ZXh0L3BkZn5wZGYiXSwiUFgxMTk5MyI6IjE3NzcxNTU3MDQ3OTgiLCJQWDEyMjI4IjoiVHlwZUVycm9yOiBDYW5ub3QgcmVhZCBwcm9wZXJ0aWVzIG9mIG51bGwgKHJlYWRpbmcgJzAnKSBhdCBKbiAoaHR0cHM6Ly9jbGllbnQucHgtY2xvdWQubmV0L1BYMnllczI0dXQvbWFpbi5taW4uanM6MjoyMDI3MSkgYXQgZnVuYyAoaHR0cHM6Ly9jbGllbnQucHgtY2xvdWQubmV0L1BYMnllczI0dXQvbWFpbi5taW4uanM6MjoxMzc1ODMpIGF0IFh0IChodHRwczovL2NsaWVudC5weC1jbG91ZC5uZXQvUFgyeWVzMjR1dC9tYWluLm1pbi5qczoyOjEzNTY2KSBhdCBodHRwczovL2NsaWVudC5weC1jbG91ZC5uZXQvUFgyeWVzMjR1dC9tYWluLm1pbi5qczoyOjE0MDgwNiBhdCBmIChodHRwczovL2Vzc2VudGlhbHMuYXZhaWxpdHkuY29tL3N0YXRpYy93ZWIvb25iL29uYm9hcmRpbmctdWktYXBwcy9uYXZpZ2F0aW9uL3N0YXRpYy9wcmQtbmV3LXJlbGljLmpzOjE6MTQ1MDIpIiwiUFgxMjI4OCI6dHJ1ZSwiUFgxMjQ0NiI6MzMsIlBYMTIyMzYiOiJmZDcxNDliYmZiMzE2Njk5ZWY5MThmYTdiYjc1MTBhOCIsIlBYMTEzMDkiOiJkNDFkOGNkOThmMDBiMjA0ZTk4MDA5OThlY2Y4NDI3ZSIsIlBYMTE1NTEiOiJmZDcxNDliYmZiMzE2Njk5ZWY5MThmYTdiYjc1MTBhOCIsIlBYMTI1ODYiOjIsIlBYMTE4NDMiOjE0MDAsIlBYMTE3ODEiOjkwMCwiUFgxMjEyMSI6MTQwMCwiUFgxMjM4NyI6IjE0MDBYOTAwIiwiUFgxMTM4MCI6MzIsIlBYMTIwMDMiOjMyLCJQWDEyMTI4Ijo5MDAsIlBYMTE4NDkiOiIxMDIwN2IyZiIsIlBYMTE1ODMiOiJlbi1VUyIsIlBYMTI0NTgiOiJXaW4zMiIsIlBYMTE3NTQiOiJNb3ppbGxhLzUuMCAoV2luZG93cyBOVCAxMC4wOyBXaW42NDsgeDY0KSBBcHBsZVdlYktpdC81MzcuMzYgKEtIVE1MLCBsaWtlIEdlY2tvKSBDaHJvbWUvMTQ3LjAuMC4wIFNhZmFyaS81MzcuMzYiLCJQWDExNjgxIjpbImVuLVVTIl0sIlBYMTIwMzciOnRydWUsIlBYMTE2MjEiOjE2LCJQWDExNjg1IjoxMiwiUFgxMTM5MCI6LTMwMCwiUFgxMTY3OCI6ZmFsc2UsIlBYMTE4NDAiOiJTdW4gQXByIDI2IDIwMjYgMDM6MjE6NDcgR01UKzA1MDAgKFBha2lzdGFuIFN0YW5kYXJkIFRpbWUpIiwiUFgxMTU0MCI6dHJ1ZSwiUFgxMTUzOSI6IjY0NTU2Yzc3IiwiUFgxMTU1NSI6NDI5NDk2NzI5NiwiUFgxMTQ1MiI6IjdjNWY5NzI0IiwiUFgxMjUyNyI6ImNhMGRjMjRjZmY1M2ZhZjIzNmRkMDBkNTI5NTUwZjU3IiwiUFgxMjQ4NiI6bnVsbH0="
+        },
+        {
+          "name": "NRBA_SESSION",
+          "value": "{\"value\":\"5d5498e30893d58b\",\"inactiveAt\":1777157507994,\"expiresAt\":1777170107994,\"updatedAt\":1777155707995,\"sessionReplay\":0,\"sessionTraceActive\":false,\"custom\":{}}"
+        },
+        {
+          "name": "myTopApps-aka58180065542",
+          "value": "{\"eligibility_benefits\":{\"count\":2,\"lastUse\":\"2026-04-15T16:59:46+05:00\"}}"
+        },
+        {
+          "name": "LUPRECORDS",
+          "value": "{\"MI-34479509\":\"AETNA\"}"
+        },
+        {
+          "name": "_pendo_meta.a68f7d07-3096-40c8-4c3f-83c2c499f0d3",
+          "value": "{\"ttl\":1785795687708,\"value\":1612972031}"
+        },
+        {
+          "name": "_pendo_visitorId.a68f7d07-3096-40c8-4c3f-83c2c499f0d3",
+          "value": "{\"ttl\":1785795709926,\"value\":\"aka58180065542\"}"
+        },
+        {
+          "name": "timerPing",
+          "value": "1776288575121"
+        },
+        {
+          "name": "glance_visitor_settings_21510_production_exp",
+          "value": "Thu, 16 Apr 2026 11:57:08 GMT"
+        },
+        {
+          "name": "_pendo_accountId.a68f7d07-3096-40c8-4c3f-83c2c499f0d3",
+          "value": "{\"ttl\":1785795709926,\"value\":\"Availity\"}"
+        },
+        {
+          "name": "intro",
+          "value": "0"
+        },
+        {
+          "name": "profile-id",
+          "value": "4250123221-2720662387-3696395166"
+        },
+        {
+          "name": "LUORECORDS",
+          "value": "{\"MI\":\"34479509\"}"
+        },
+        {
+          "name": "glance_presence_exp",
+          "value": "Wed, 15 Apr 2026 21:41:21 GMT"
+        },
+        {
+          "name": "glance_visitor_settings_21510_production",
+          "value": "{\"presenceserver\":\"prod-presence-1.glance.net\",\"presencesettings\":{\"MP\":\"\",\"VServer\":\"lb-video.glance.net\",\"coloSelectUrl\":\"presence-location.glance.net/colo-lookup\",\"isMetricsEnabled\":false,\"isPresenceLoadBalanced\":true,\"metricsUrl\":\"\",\"presenceUrl\":\"prod-presence-1.glance.net\",\"privilegeString\":\"encrypt:on;guests:10\",\"screenshareTermsUrl\":\"\",\"service\":2}}"
+        },
+        {
+          "name": "glance_presence",
+          "value": "{\"directserver\":\"prod-presence-1.glance.net:443\",\"groupid\":\"21510\",\"visitorid\":\"aka58180065542\",\"ws\":\"www.glance.net\"}"
+        },
+        {
+          "name": "PX2yes24ut_px_hvd",
+          "value": "0195314c19d1183b848281cdfab477ba"
+        },
+        {
+          "name": "_pendo_oldVisitorId.a68f7d07-3096-40c8-4c3f-83c2c499f0d3",
+          "value": "{\"ttl\":1784894225851,\"value\":\"_PENDO_T_gKrBVSz8DO5\"}"
+        },
+        {
+          "name": "PX2yes24ut_px-ff",
+          "value": "eyJjYyI6eyJ0dGwiOjE3NzcxNTU3NjcsInZhbCI6IlUyRnRaVk5wZEdVOVRHRjRPdz09In19"
+        },
+        {
+          "name": "sesssionFirstLoad-null",
+          "value": "false"
+        },
+        {
+          "name": "PAYERRECORDS",
+          "value": "[[\"AETNA\",{\"payerId\":\"AETNA\",\"frequency\":33,\"lastUsed\":1776288575175}]]"
+        },
+        {
+          "name": "top-apps-updated-aka58180065542",
+          "value": "2026-04-15T16:59:46+05:00"
+        },
+        {
+          "name": "_pendo_guides_blocked.a68f7d07-3096-40c8-4c3f-83c2c499f0d3",
+          "value": "{\"ttl\":1777170088967,\"value\":\"0\"}"
+        }
+      ]
+    }
+  ]
+}

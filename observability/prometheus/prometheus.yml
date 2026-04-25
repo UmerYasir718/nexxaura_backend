@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Optional: add `celery-exporter:9540` when you run Celery + redis_exporter in your FastAPI stack
+scrape_configs:
+  - job_name: node-api
+    static_configs:
+      - targets: ["node-api:4000"]
+    metrics_path: /metrics
+    relabel_configs:
+      - target_label: instance
+        replacement: node-api:4000
+
+  - job_name: node-worker
+    static_configs:
+      - targets: ["node-worker:9109"]
+    metrics_path: /metrics
+    relabel_configs:
+      - target_label: instance
+        replacement: node-worker:9109
+
+  - job_name: fastapi
+    static_configs:
+      - targets: ["fastapi:8000"]
+    metrics_path: /metrics
+    relabel_configs:
+      - target_label: instance
+        replacement: fastapi:8000
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+    relabel_configs:
+      - target_label: instance
+        replacement: redis-exporter:9121

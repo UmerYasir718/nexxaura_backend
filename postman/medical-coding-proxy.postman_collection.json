@@ -1,0 +1,54 @@
+{
+  "info": {
+    "name": "Medical coding / transcription proxy (via Nexxaura gateway)",
+    "description": "These requests hit the **Node gateway** (default :4000), which proxies to FastAPI (MEDICAL_BACKEND_BASE_URL). Keep keys only in .env on the FastAPI side unless you add server-side auth here.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:4000" },
+    { "key": "summaryText", "value": "Patient presents for follow-up. Assessment: stable. Plan: continue current management." }
+  ],
+  "item": [
+    {
+      "name": "Gateway only — /health",
+      "request": { "method": "GET", "url": "{{baseUrl}}/health" }
+    },
+    {
+      "name": "Upstream health — GET / (FastAPI)",
+      "request": { "method": "GET", "url": "{{baseUrl}}/" }
+    },
+    {
+      "name": "POST /api/coding/assign-codes",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"summary_report\": \"{{summaryText}}\",\n  \"specialty\": null,\n  \"patient_history\": null,\n  \"model\": \"openai\"\n}"
+        },
+        "url": "{{baseUrl}}/api/coding/assign-codes"
+      }
+    },
+    {
+      "name": "POST /api/coding/assign-codes-stream (SSE)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "text/event-stream" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"summary_report\": \"{{summaryText}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/coding/assign-codes-stream"
+      }
+    },
+    {
+      "name": "POST /api/download/report-txt",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"content\": \"## Report\\nline\"\n}" },
+        "url": "{{baseUrl}}/api/download/report-txt"
+      }
+    }
+  ]
+}

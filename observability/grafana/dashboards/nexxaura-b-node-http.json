@@ -1,0 +1,51 @@
+{
+  "uid": "nexxaura-b-node-http",
+  "title": "B) Node API — HTTP & routes",
+  "tags": ["nexxaura", "B", "node", "http"],
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "RPS by route (top series)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prom-default" },
+          "expr": "sum by (route) (rate(http_requests_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "spanNulls": true } } }
+    },
+    {
+      "id": 2,
+      "type": "bargauge",
+      "title": "Status by route (5m rate, sample)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "targets": [
+        {
+          "expr": "sum by (status, route) (rate(http_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{status}} {{route}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "In-flight HTTP requests (node)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "targets": [{ "expr": "http_requests_in_flight", "refId": "A" }]
+    }
+  ]
+}

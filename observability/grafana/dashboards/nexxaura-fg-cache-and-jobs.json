@@ -1,0 +1,63 @@
+{
+  "uid": "nexxaura-fg-ops",
+  "title": "F–G) Cache / Redis + Background jobs (Node + Celery)",
+  "description": "Node: cache_*_total, queue_*, redis_*; add celery_exporter to Prometheus to populate Celery panels side-by-side.",
+  "tags": ["nexxaura", "F", "G", "cache", "queue", "celery"],
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "refresh": "15s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Cache hit vs miss (rate) — node app",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum by (name) (rate(cache_hits_total[5m])) or vector(0)", "refId": "A", "legendFormat": "hit" },
+        { "expr": "sum by (name) (rate(cache_misses_total[5m])) or vector(0)", "refId": "B", "legendFormat": "miss" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Redis: memory (redis-exporter) + node probe",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "max(redis_memory_used_bytes) or vector(0)", "refId": "A", "legendFormat": "redis-exporter" },
+        { "expr": "max(redis_used_memory_bytes) or vector(0)", "refId": "B", "legendFormat": "node-redis" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "BullMQ: queue backlog (waiting+active+delayed)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 7 },
+      "targets": [{ "expr": "max(queue_backlog) or vector(0)", "refId": "A" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "BullMQ: jobs completed (rate) /s",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 7 },
+      "targets": [{ "expr": "sum(rate(queue_jobs_completed_total[5m])) or vector(0)", "refId": "A" }]
+    },
+    {
+      "id": 5,
+      "type": "text",
+      "title": "Celery (FastAPI) note",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 7 },
+      "options": {
+        "content": "Add a Celery metrics exporter to Prometheus; then duplicate the BullMQ row with `celery_` or `celery_task_*` series. Metrics names depend on your `celery-exporter` image.",
+        "mode": "markdown"
+      }
+    }
+  ]
+}

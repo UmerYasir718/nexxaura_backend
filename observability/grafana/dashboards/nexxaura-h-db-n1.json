@@ -1,0 +1,50 @@
+{
+  "uid": "nexxaura-h-db",
+  "title": "H) Database — N+1 signal (queries per request)",
+  "tags": ["nexxaura", "H", "postgres", "n+1"],
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "refresh": "15s",
+  "time": { "from": "now-3h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "p95 DB queries per HTTP request (watch spikes for N+1)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_db_query_count_bucket[5m]))) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Postgres query rate (all)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "sum(rate(db_queries_total[5m])) or vector(0)", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "DB pool (idle / total / waiting)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 16, "x": 8, "y": 8 },
+      "targets": [
+        { "expr": "db_pool_size_idle", "refId": "A" },
+        { "expr": "db_pool_size_total", "refId": "B" },
+        { "expr": "db_pool_size_waiting", "refId": "C" }
+      ]
+    }
+  ]
+}

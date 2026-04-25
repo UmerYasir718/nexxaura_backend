@@ -1,0 +1,245 @@
+{
+  "info": {
+    "name": "Nexxaura Main Server",
+    "description": "Full gateway. For **only** user-scoped data GETs, import `postman/nexxaura-user-data.postman_collection.json`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "syncRequestId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    },
+    {
+      "name": "Login (demo / doctor)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"demo@nexxaura.com\",\n  \"password\": \"demo123\"\n}"
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      }
+    },
+    {
+      "name": "Login (admin) — use token for create user",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"admin@nexxaura.com\",\n  \"password\": \"admin123\"\n}"
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      }
+    },
+    {
+      "name": "Create user (admin only)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"reception@clinic.com\",\n  \"fullName\": \"Front Desk\",\n  \"password\": \"change-me-secure\",\n  \"role\": \"reception\",\n  \"officeAlly\": { \"username\": \"optional_oa_user\", \"password\": \"optional_oa_pass\" },\n  \"availity\": { \"username\": \"optional_av_user\", \"password\": \"optional_av_pass\" }\n}\n"
+        },
+        "url": "{{baseUrl}}/api/users"
+      }
+    },
+    {
+      "name": "Create user (optional vendors omitted)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"staff2@clinic.com\",\n  \"fullName\": \"Nurse A\",\n  \"password\": \"change-me-secure\",\n  \"role\": \"staff\"\n}\n"
+        },
+        "url": "{{baseUrl}}/api/users"
+      }
+    },
+    {
+      "name": "Date Sync (202 Accepted — runs in background)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"appointmentDate\": \"2026-04-24\"\n}"
+        },
+        "url": "{{baseUrl}}/api/sync/date-sync"
+      }
+    },
+    {
+      "name": "Submit Availity MFA (OTP) code",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"syncRequestId\": \"{{syncRequestId}}\",\n  \"code\": \"123456\"\n}"
+        },
+        "url": "{{baseUrl}}/api/sync/otp"
+      }
+    },
+    {
+      "name": "My Runs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/sync/runs"
+      }
+    },
+    {
+      "name": "Get Run by id",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/sync/runs/{{syncRequestId}}"
+      }
+    },
+    {
+      "name": "User data (JWT — relative rows only)",
+      "description": "Each GET returns data for the logged-in user only (`user_id` on token).",
+      "item": [
+        {
+          "name": "GET Appointments",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/data/appointments"
+          }
+        },
+        {
+          "name": "GET Patients",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/data/patients"
+          }
+        },
+        {
+          "name": "GET Patient insurance",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/data/patient-insurance"
+          }
+        },
+        {
+          "name": "GET Availity (eligibility summary)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/data/availity"
+          }
+        },
+        {
+          "name": "GET Dashboard (all of the above in one JSON)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/data/dashboard"
+          }
+        }
+      ]
+    },
+    {
+      "name": "GraphQL — dashboard counts",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"{ dashboard { appointmentCount patientCount insuranceRowCount availityRowCount } }\"\n}"
+        },
+        "url": "{{baseUrl}}/graphql"
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+# Graphifyy (https://pypi.org/project/graphifyy/) — same syntax as .gitignore
+node_modules/
+coverage/
+.nyc_output/
+graphify-out/
+cache/
+.env
+.env.*
+*.log
+package-lock.json
