@@ -10,6 +10,16 @@ async function getAppointments(req, res, next) {
   }
 }
 
+async function getAppointmentsByPatient(req, res, next) {
+  try {
+    const { patientId } = req.params;
+    const rows = await dataService.listAppointmentsByPatient(req.user.id, patientId);
+    return res.json(stripIntegrationRaw(rows));
+  } catch (e) {
+    return next(e);
+  }
+}
+
 async function getPatients(req, res, next) {
   try {
     const rows = await dataService.listPatients(req.user.id);
@@ -28,9 +38,29 @@ async function getPatientInsurance(req, res, next) {
   }
 }
 
+async function getPatientInsuranceByPatient(req, res, next) {
+  try {
+    const { patientId } = req.params;
+    const rows = await dataService.listPatientInsuranceByPatient(req.user.id, patientId);
+    return res.json(stripIntegrationRaw(rows));
+  } catch (e) {
+    return next(e);
+  }
+}
+
 async function getAvailitySummary(req, res, next) {
   try {
     const rows = await dataService.listAvailitySummary(req.user.id);
+    return res.json(stripIntegrationRaw(rows));
+  } catch (e) {
+    return next(e);
+  }
+}
+
+async function getAvailitySummaryByPatient(req, res, next) {
+  try {
+    const { patientId } = req.params;
+    const rows = await dataService.listAvailitySummaryByPatient(req.user.id, patientId);
     return res.json(stripIntegrationRaw(rows));
   } catch (e) {
     return next(e);
@@ -48,8 +78,11 @@ async function getDashboard(req, res, next) {
 
 module.exports = {
   getAppointments,
+  getAppointmentsByPatient,
   getPatients,
   getPatientInsurance,
+  getPatientInsuranceByPatient,
   getAvailitySummary,
+  getAvailitySummaryByPatient,
   getDashboard,
 };

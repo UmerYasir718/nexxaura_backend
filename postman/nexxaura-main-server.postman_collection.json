@@ -20,6 +20,10 @@
     {
       "key": "syncRequestId",
       "value": ""
+    },
+    {
+      "key": "patientId",
+      "value": "89e9416c-496a-4397-8fed-e05113c5f7b3"
     }
   ],
   "item": [
@@ -128,6 +132,48 @@
       }
     },
     {
+      "name": "Eligibility verification (Availity only)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"appointmentDate\": \"2026-04-24\"\n}"
+        },
+        "url": "{{baseUrl}}/api/sync/eligibility-verification"
+      }
+    },
+    {
+      "name": "Eligibility + insurance (OA then Availity)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"appointmentDate\": \"2026-04-24\"\n}"
+        },
+        "url": "{{baseUrl}}/api/sync/eligibilityandinsurance"
+      }
+    },
+    {
       "name": "Submit Availity MFA (OTP) code",
       "request": {
         "method": "POST",
@@ -195,6 +241,14 @@
           }
         },
         {
+          "name": "GET Appointments by patientId",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/data/patients/{{patientId}}/appointments"
+          }
+        },
+        {
           "name": "GET Patient insurance",
           "request": {
             "method": "GET",
@@ -203,11 +257,27 @@
           }
         },
         {
+          "name": "GET Patient insurance by patientId",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/data/patients/{{patientId}}/insurance"
+          }
+        },
+        {
           "name": "GET Availity (eligibility summary)",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
             "url": "{{baseUrl}}/api/data/availity"
+          }
+        },
+        {
+          "name": "GET Availity by patientId",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/data/patients/{{patientId}}/availity"
           }
         },
         {

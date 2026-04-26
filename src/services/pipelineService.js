@@ -33,6 +33,64 @@ function pickFirstNonEmpty(...values) {
   return values.find((v) => String(v || '').trim()) || null;
 }
 
+function parseMoney(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const s = String(v).replace(/,/g, '');
+  const m = s.match(/-?\d+(?:\.\d+)?/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function findFirstByKeyRegexDeep(value, regex, depth = 0) {
+  if (value == null || depth > 6) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const hit = findFirstByKeyRegexDeep(item, regex, depth + 1);
+      if (hit != null && String(hit).trim() !== '') return hit;
+    }
+    return null;
+  }
+  if (typeof value !== 'object') return null;
+  for (const [k, v] of Object.entries(value)) {
+    if (regex.test(String(k)) && v != null && String(v).trim() !== '') {
+      return v;
+    }
+  }
+  for (const nested of Object.values(value)) {
+    const hit = findFirstByKeyRegexDeep(nested, regex, depth + 1);
+    if (hit != null && String(hit).trim() !== '') return hit;
+  }
+  return null;
+}
+
+function extractFinancialFields(resultRow, snap) {
+  const raw = (resultRow && resultRow.rawSnapshot) || (snap && snap.rawSnapshot) || snap || {};
+  const copayRaw =
+    resultRow?.copayAmount ??
+    resultRow?.copay ??
+    findFirstByKeyRegexDeep(raw, /(copay|co[_\s-]?pay|patient[_\s-]?responsibility)/i);
+  const deductibleRaw =
+    resultRow?.deductibleAmount ??
+    resultRow?.deductible ??
+    findFirstByKeyRegexDeep(raw, /(deductible)/i);
+  const coinsuranceRaw =
+    resultRow?.coinsurance ??
+    findFirstByKeyRegexDeep(raw, /(coinsurance|co[_\s-]?insurance)/i);
+  const oopRaw =
+    resultRow?.oopRemaining ??
+    resultRow?.outOfPocketRemaining ??
+    findFirstByKeyRegexDeep(raw, /(oop[_\s-]?remaining|out[_\s-]?of[_\s-]?pocket.*remaining|remaining.*out[_\s-]?of[_\s-]?pocket)/i);
+
+  return {
+    copayAmount: parseMoney(copayRaw),
+    deductibleAmount: parseMoney(deductibleRaw),
+    coinsurance: coinsuranceRaw == null ? null : String(coinsuranceRaw).trim() || null,
+    oopRemaining: parseMoney(oopRaw),
+  };
+}
+
 function buildAppointmentStart(appointmentDate, timeValue) {
   const time = String(timeValue || '').trim();
   if (!time) return null;
@@ -577,13 +635,14 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
         }
         const snap = await scraper.availityParseResponseSnapshot(frame);
         const resultRow = scraper.mapAvailitySnapshotToResultRow(snap);
+        const financials = extractFinancialFields(resultRow, snap);
         if (snap.alertText) {
           throw new Error(snap.alertText);
         }
         await db.query(
           `INSERT INTO availity_eligibility_results
-            (run_id, coverage_status_text, is_active, member_id, payer_id, patient_name_on_file, benefit_line, date_of_service, transaction_date, insurance_type, plan_product, coverage_level, raw_snapshot)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            (run_id, coverage_status_text, is_active, member_id, payer_id, patient_name_on_file, benefit_line, date_of_service, transaction_date, insurance_type, plan_product, coverage_level, copay_amount, deductible_amount, coinsurance, oop_remaining, raw_snapshot)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
           [
             elRunId,
             resultRow.coverageStatusText,
@@ -597,6 +656,10 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
             resultRow.insuranceType,
             resultRow.planProduct,
             resultRow.coverageLevel,
+            financials.copayAmount,
+            financials.deductibleAmount,
+            financials.coinsurance,
+            financials.oopRemaining,
             resultRow.rawSnapshot || {},
           ],
         );
@@ -612,6 +675,10 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
           status: 'success',
           coverageStatusText: resultRow.coverageStatusText,
           isActive: resultRow.isActive,
+          copayAmount: financials.copayAmount,
+          deductibleAmount: financials.deductibleAmount,
+          coinsurance: financials.coinsurance,
+          oopRemaining: financials.oopRemaining,
         });
       } catch (e) {
         await db.query("UPDATE availity_eligibility_runs SET status = 'failed', finished_at = NOW(), message = $2 WHERE id = $1", [

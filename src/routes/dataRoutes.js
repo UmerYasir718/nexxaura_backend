@@ -7,8 +7,11 @@ r.use(requireAuth);
 
 r.get('/appointments', dataController.getAppointments);
 r.get('/patients', dataController.getPatients);
+r.get('/patients/:patientId/appointments', dataController.getAppointmentsByPatient);
 r.get('/patient-insurance', dataController.getPatientInsurance);
+r.get('/patients/:patientId/insurance', dataController.getPatientInsuranceByPatient);
 r.get('/availity', dataController.getAvailitySummary);
+r.get('/patients/:patientId/availity', dataController.getAvailitySummaryByPatient);
 r.get('/dashboard', dataController.getDashboard);
 
 module.exports = r;

@@ -34,7 +34,8 @@
   ],
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:4000" },
-    { "key": "token", "value": "" }
+    { "key": "token", "value": "" },
+    { "key": "patientId", "value": "" }
   ],
   "item": [
     {
@@ -72,6 +73,14 @@
       }
     },
     {
+      "name": "2b. Appointments by patientId (includes system_patient_id)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/data/patients/{{patientId}}/appointments"
+      }
+    },
+    {
       "name": "3. Patients (my user only)",
       "request": {
         "method": "GET",
@@ -88,11 +97,27 @@
       }
     },
     {
+      "name": "4b. Insurance by patientId",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/data/patients/{{patientId}}/insurance"
+      }
+    },
+    {
       "name": "5. Availity summary (my user only)",
       "request": {
         "method": "GET",
         "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
         "url": "{{baseUrl}}/api/data/availity"
+      }
+    },
+    {
+      "name": "5b. Availity eligibility by patientId",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/data/patients/{{patientId}}/availity"
       }
     },
     {
