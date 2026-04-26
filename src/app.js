@@ -17,7 +17,8 @@ const app = express();
 
 app.use(
   cors({
-    origin: env.cors.origins,
+    // If CORS_ORIGINS is not set, allow all origins for now.
+    origin: env.cors.allowAll ? true : env.cors.origins,
     credentials: true,
   }),
 );

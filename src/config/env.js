@@ -3,7 +3,10 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 function parseCorsOrigins() {
-  const raw = process.env.CORS_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000';
+  const raw = process.env.CORS_ORIGINS;
+  if (!raw || !raw.trim()) {
+    return [];
+  }
   return raw
     .split(',')
     .map((s) => s.trim())
@@ -68,6 +71,7 @@ module.exports = {
   },
   cors: {
     origins: parseCorsOrigins(),
+    allowAll: !process.env.CORS_ORIGINS || !process.env.CORS_ORIGINS.trim(),
   },
   /** Same limits as typical FastAPI config; enforced before proxy */
   medicalLimits: {
