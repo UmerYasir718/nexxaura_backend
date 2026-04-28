@@ -25,6 +25,7 @@ module.exports = {
   appVersion: process.env.APP_VERSION || process.env.GIT_SHA || 'dev',
   metricsEnabled: boolEnv('METRICS_ENABLED', true),
   jwtSecret: process.env.JWT_SECRET || 'dev-secret',
+  credentialsEncryptionKey: process.env.CREDENTIALS_ENCRYPTION_KEY || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '12h',
   redisUrl: process.env.REDIS_URL || 'redis://127.0.0.1:6379',
   useSyncQueue: boolEnv('USE_SYNC_QUEUE', process.env.NODE_ENV !== 'test'),
