@@ -1,24 +1,27 @@
-const db = require('../config/db');
-const env = require('../config/env');
-const HttpError = require('../utils/httpError');
+const db = require("../config/db");
+const env = require("../config/env");
+const HttpError = require("../utils/httpError");
+const { decryptCredentialPassword } = require("../utils/credentialCrypto");
 const {
   runEndToEndSync,
   runOfficeAllyStage,
   runAvailityStage,
-} = require('./pipelineService');
+} = require("./pipelineService");
 
 function compactOfficeAllyRows(rows) {
   return (rows || []).map((r) => ({
-    patientId: r['Patient ID'] || null,
-    appointmentId: r['Appointment ID'] || null,
-    firstName: r['First Name'] || null,
-    lastName: r['Last Name'] || null,
-    dateOfBirth: r['Date Of Birth'] || null,
+    patientId: r["Patient ID"] || null,
+    appointmentId: r["Appointment ID"] || null,
+    firstName: r["First Name"] || null,
+    lastName: r["Last Name"] || null,
+    dateOfBirth: r["Date Of Birth"] || null,
     time: r.Time || null,
     provider: r.Provider || null,
     status: r.Status || null,
     reason: r.Reason || null,
-    hasPatientDetails: Boolean(r.patientDetails && !r.patientDetails.scrapeError),
+    hasPatientDetails: Boolean(
+      r.patientDetails && !r.patientDetails.scrapeError,
+    ),
     scrapeError: r.patientDetails?.scrapeError || null,
   }));
 }
@@ -34,11 +37,12 @@ function buildOfficeAllyResponse(rows, maxItems = 50) {
 
 function buildEligibilityResponse(availity, message) {
   return {
-    status: 'good',
+    status: "good",
     message,
     processed: availity.processed,
     successCount: availity.successCount,
-    failedCount: (availity.results || []).filter((r) => r.status === 'failed').length,
+    failedCount: (availity.results || []).filter((r) => r.status === "failed")
+      .length,
   };
 }
 
@@ -57,39 +61,72 @@ async function fetchCredentialsForE2E(userId) {
   );
   const r = rows[0];
   if (!r || !r.oa_username) {
-    throw new HttpError(400, 'Office Ally credentials not configured for this user');
+    throw new HttpError(
+      400,
+      "Office Ally credentials not configured for this user",
+    );
   }
   if (!r || !r.av_username) {
-    throw new HttpError(400, 'Availity credentials not configured for this user');
+    throw new HttpError(
+      400,
+      "Availity credentials not configured for this user",
+    );
   }
   return {
-    officeAllyCreds: { username: r.oa_username, password: r.oa_password },
-    availityCreds: { username: r.av_username, password: r.av_password },
+    officeAllyCreds: {
+      username: r.oa_username,
+      password: decryptCredentialPassword(r.oa_password),
+    },
+    availityCreds: {
+      username: r.av_username,
+      password: decryptCredentialPassword(r.av_password),
+    },
   };
 }
 
 async function fetchOfficeAllyCreds(userId) {
-  const { rows } = await db.query('SELECT username, password FROM office_ally_credentials WHERE user_id = $1 LIMIT 1', [userId]);
+  const { rows } = await db.query(
+    "SELECT username, password FROM office_ally_credentials WHERE user_id = $1 LIMIT 1",
+    [userId],
+  );
   const row = rows[0];
   if (!row || !row.username) {
-    throw new HttpError(400, 'Office Ally credentials not configured for this user');
+    throw new HttpError(
+      400,
+      "Office Ally credentials not configured for this user",
+    );
   }
-  return { username: row.username, password: row.password };
+  return {
+    username: row.username,
+    password: decryptCredentialPassword(row.password),
+  };
 }
 
 async function fetchAvailityCreds(userId) {
-  const { rows } = await db.query('SELECT username, password FROM availity_credentials WHERE user_id = $1 LIMIT 1', [userId]);
+  const { rows } = await db.query(
+    "SELECT username, password FROM availity_credentials WHERE user_id = $1 LIMIT 1",
+    [userId],
+  );
   const row = rows[0];
   if (!row || !row.username) {
-    throw new HttpError(400, 'Availity credentials not configured for this user');
+    throw new HttpError(
+      400,
+      "Availity credentials not configured for this user",
+    );
   }
-  return { username: row.username, password: row.password };
+  return {
+    username: row.username,
+    password: decryptCredentialPassword(row.password),
+  };
 }
 
 async function markSyncFailed(syncId, err) {
   const msg = err && err.message != null ? err.message : String(err);
   try {
-    await db.query("UPDATE sync_requests SET status = 'failed', message = $2, finished_at = NOW() WHERE id = $1", [syncId, msg]);
+    await db.query(
+      "UPDATE sync_requests SET status = 'failed', message = $2, finished_at = NOW() WHERE id = $1",
+      [syncId, msg],
+    );
   } catch {
     /* */
   }
@@ -104,18 +141,16 @@ async function markSyncSuccess(syncId, savedAppointments) {
 
 function markSyncSuccessBestEffort(syncId, savedAppointments) {
   setImmediate(() => {
-    Promise.resolve(
-      markSyncSuccess(syncId, savedAppointments),
-    ).catch((err) => {
+    Promise.resolve(markSyncSuccess(syncId, savedAppointments)).catch((err) => {
       // eslint-disable-next-line no-console
-      console.error('[date-sync success status update failed]', err);
+      console.error("[date-sync success status update failed]", err);
     });
   });
 }
 
 function normalizeDateOrThrow(appointmentDate) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(appointmentDate || ''))) {
-    throw new HttpError(400, 'appointmentDate must be YYYY-MM-DD');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(appointmentDate || ""))) {
+    throw new HttpError(400, "appointmentDate must be YYYY-MM-DD");
   }
   return appointmentDate;
 }
@@ -132,7 +167,12 @@ async function findActiveRun(userId) {
   return pre.rows[0] || null;
 }
 
-async function createSyncRun({ userId, appointmentDate, currentStage, message }) {
+async function createSyncRun({
+  userId,
+  appointmentDate,
+  currentStage,
+  message,
+}) {
   const active = await findActiveRun(userId);
   if (active) {
     return {
@@ -153,7 +193,7 @@ async function createSyncRun({ userId, appointmentDate, currentStage, message })
     );
     return { syncRequestId: ins.rows[0].id };
   } catch (e) {
-    if (e && e.code === '23505') {
+    if (e && e.code === "23505") {
       const again = await findActiveRun(userId);
       if (again) {
         return {
@@ -174,13 +214,14 @@ async function createSyncRun({ userId, appointmentDate, currentStage, message })
 async function requestDateSync({ userId, appointmentDate }) {
   normalizeDateOrThrow(appointmentDate);
 
-  const { officeAllyCreds: oa, availityCreds: av } = await fetchCredentialsForE2E(userId);
+  const { officeAllyCreds: oa, availityCreds: av } =
+    await fetchCredentialsForE2E(userId);
 
   const created = await createSyncRun({
     userId,
     appointmentDate,
-    currentStage: 'office_ally',
-    message: 'queued',
+    currentStage: "office_ally",
+    message: "queued",
   });
   if (created.alreadyProcessing) {
     return created;
@@ -188,12 +229,12 @@ async function requestDateSync({ userId, appointmentDate }) {
   const syncId = created.syncRequestId;
 
   if (env.useSyncQueue) {
-    const { enqueueE2eSync } = require('../queue/syncQueue');
+    const { enqueueE2eSync } = require("../queue/syncQueue");
     try {
       await enqueueE2eSync({ userId, syncId, appointmentDate });
     } catch (e) {
       // eslint-disable-next-line no-console
-      console.error('[enqueue sync failed]', e);
+      console.error("[enqueue sync failed]", e);
       await markSyncFailed(syncId, e);
       throw e;
     }
@@ -208,16 +249,20 @@ async function requestDateSync({ userId, appointmentDate }) {
       })
         // eslint-disable-next-line no-console
         .catch((err) => {
-          console.error('[sync pipeline failed]', err);
+          console.error("[sync pipeline failed]", err);
           return markSyncFailed(syncId, err);
         });
     });
   }
 
-  return { syncRequestId: syncId, message: 'Sync started' };
+  return { syncRequestId: syncId, message: "Sync started" };
 }
 
-async function runDateSyncOnly({ userId, appointmentDate, awaitSuccessStatus = false }) {
+async function runDateSyncOnly({
+  userId,
+  appointmentDate,
+  awaitSuccessStatus = false,
+}) {
   const date = normalizeDateOrThrow(appointmentDate);
   // eslint-disable-next-line no-console
   console.log(`[date-sync] request received userId=${userId} date=${date}`);
@@ -227,17 +272,21 @@ async function runDateSyncOnly({ userId, appointmentDate, awaitSuccessStatus = f
   const created = await createSyncRun({
     userId,
     appointmentDate: date,
-    currentStage: 'office_ally',
-    message: 'Office Ally endpoint started',
+    currentStage: "office_ally",
+    message: "Office Ally endpoint started",
   });
   if (created.alreadyProcessing) {
     // eslint-disable-next-line no-console
-    console.log(`[date-sync] blocked by active run syncId=${created.syncRequestId}`);
+    console.log(
+      `[date-sync] blocked by active run syncId=${created.syncRequestId}`,
+    );
     return created;
   }
   const syncId = created.syncRequestId;
   // eslint-disable-next-line no-console
-  console.log(`[date-sync] sync run created syncId=${syncId}; starting office ally save`);
+  console.log(
+    `[date-sync] sync run created syncId=${syncId}; starting office ally save`,
+  );
   try {
     const { savedAppointments } = await runOfficeAllyStage({
       userId,
@@ -251,16 +300,18 @@ async function runDateSyncOnly({ userId, appointmentDate, awaitSuccessStatus = f
       markSyncSuccessBestEffort(syncId, savedAppointments);
     }
     // eslint-disable-next-line no-console
-    console.log(`[date-sync] response ready saved=${savedAppointments} syncId=${syncId}`);
+    console.log(
+      `[date-sync] response ready saved=${savedAppointments} syncId=${syncId}`,
+    );
 
     return {
-      status: 'good',
-      message: 'Office Ally date sync completed',
+      status: "good",
+      message: "Office Ally date sync completed",
       savedAppointments,
     };
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('[date-sync office ally failed]', err);
+    console.error("[date-sync office ally failed]", err);
     await markSyncFailed(syncId, err);
     throw err;
   }
@@ -272,8 +323,8 @@ async function runEligibilityVerification({ userId, appointmentDate }) {
   const created = await createSyncRun({
     userId,
     appointmentDate: date,
-    currentStage: 'availity',
-    message: 'Availity eligibility endpoint started',
+    currentStage: "availity",
+    message: "Availity eligibility endpoint started",
   });
   if (created.alreadyProcessing) {
     return created;
@@ -287,7 +338,10 @@ async function runEligibilityVerification({ userId, appointmentDate }) {
       appointmentDate: date,
       officeAllySavedAppointments: null,
     });
-    return buildEligibilityResponse(availity, 'Eligibility verification completed');
+    return buildEligibilityResponse(
+      availity,
+      "Eligibility verification completed",
+    );
   } catch (e) {
     await markSyncFailed(syncId, e);
     throw e;
@@ -307,16 +361,23 @@ async function runEligibilityAndInsurance({ userId, appointmentDate }) {
     return officeAlly;
   }
   // eslint-disable-next-line no-console
-  console.log(`[combined-sync] date-sync done saved=${officeAlly.savedAppointments}; eligibility starting date=${date}`);
-  const eligibility = await runEligibilityVerification({ userId, appointmentDate: date });
+  console.log(
+    `[combined-sync] date-sync done saved=${officeAlly.savedAppointments}; eligibility starting date=${date}`,
+  );
+  const eligibility = await runEligibilityVerification({
+    userId,
+    appointmentDate: date,
+  });
   if (eligibility.alreadyProcessing) {
     return eligibility;
   }
   // eslint-disable-next-line no-console
-  console.log(`[combined-sync] eligibility done processed=${eligibility.processed}`);
+  console.log(
+    `[combined-sync] eligibility done processed=${eligibility.processed}`,
+  );
   return {
-    status: 'good',
-    message: 'Eligibility and insurance completed',
+    status: "good",
+    message: "Eligibility and insurance completed",
     savedAppointments: officeAlly.savedAppointments,
     eligibility,
   };
@@ -324,7 +385,7 @@ async function runEligibilityAndInsurance({ userId, appointmentDate }) {
 
 async function getRunByIdForUser(userId, syncRequestId) {
   const { rows } = await db.query(
-    'SELECT * FROM sync_requests WHERE id = $1 AND user_id = $2 LIMIT 1',
+    "SELECT * FROM sync_requests WHERE id = $1 AND user_id = $2 LIMIT 1",
     [syncRequestId, userId],
   );
   return rows[0] || null;
@@ -332,7 +393,7 @@ async function getRunByIdForUser(userId, syncRequestId) {
 
 async function getRunsByUser(userId) {
   const { rows } = await db.query(
-    'SELECT * FROM sync_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 25',
+    "SELECT * FROM sync_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 25",
     [userId],
   );
   return rows;
