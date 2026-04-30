@@ -18,16 +18,42 @@ ON CONFLICT (email) DO UPDATE SET
   role = EXCLUDED.role,
   updated_at = NOW();
 
-INSERT INTO office_ally_credentials (user_id, username, password)
-SELECT u.id, 'OA_DEMO_USER', 'OA_DEMO_PASSWORD' FROM users u WHERE u.email = 'demo@nexxaura.com'
+INSERT INTO office_ally_credentials
+  (user_id, company_name, title, description, name, username, password)
+SELECT
+  u.id,
+  'Office Ally',
+  'Office Ally EHR',
+  'Demo Office Ally credential',
+  'Demo User',
+  'OA_DEMO_USER',
+  'OA_DEMO_PASSWORD'
+FROM users u WHERE u.email = 'demo@nexxaura.com'
 ON CONFLICT (user_id) DO UPDATE SET
+  company_name = EXCLUDED.company_name,
+  title = EXCLUDED.title,
+  description = EXCLUDED.description,
+  name = EXCLUDED.name,
   username = EXCLUDED.username,
   password = EXCLUDED.password,
   updated_at = NOW();
 
-INSERT INTO availity_credentials (user_id, username, password)
-SELECT u.id, 'AVAILITY_DEMO_USER', 'AVAILITY_DEMO_PASSWORD' FROM users u WHERE u.email = 'demo@nexxaura.com'
+INSERT INTO availity_credentials
+  (user_id, company_name, title, description, name, username, password)
+SELECT
+  u.id,
+  'Availity',
+  'Availity Payer Portal',
+  'Demo Availity credential',
+  'Demo User',
+  'AVAILITY_DEMO_USER',
+  'AVAILITY_DEMO_PASSWORD'
+FROM users u WHERE u.email = 'demo@nexxaura.com'
 ON CONFLICT (user_id) DO UPDATE SET
+  company_name = EXCLUDED.company_name,
+  title = EXCLUDED.title,
+  description = EXCLUDED.description,
+  name = EXCLUDED.name,
   username = EXCLUDED.username,
   password = EXCLUDED.password,
   updated_at = NOW();

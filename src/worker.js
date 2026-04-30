@@ -1,3 +1,4 @@
+require('../instrument');
 const http = require('node:http');
 const env = require('./config/env');
 const m = require('./metrics/prometheus');

@@ -42,6 +42,20 @@ Node.js **API gateway** that combines:
 - `npm run test:ci` — Jest with coverage (used in GitHub Actions: `.github/workflows/ci.yml`)
 - Table-driven and `forEach` examples: `tests/medicalRules.test.js`, `tests/dataService.forEach.test.js`
 
+## Sentry
+
+- SDK is initialized from `instrument.js` (loaded first in both `src/server.js` and `src/worker.js`).
+- Set `SENTRY_DSN` in environment (fallback key `dsn` is also supported for backward compatibility).
+- Optional vars:
+  - `SENTRY_TRACES_SAMPLE_RATE` (default `1.0`)
+  - `SENTRY_PROFILE_SESSION_SAMPLE_RATE` (default `1.0`)
+  - `SENTRY_PROFILE_LIFECYCLE` (default `trace`)
+  - `SENTRY_ENABLE_LOGS` (default `true`)
+  - `SENTRY_SEND_DEFAULT_PII` (default `true`)
+  - `SENTRY_ENVIRONMENT` (default `development` / `docker-local`)
+  - `SENTRY_TEST_ROUTE_ENABLED` (default `true` outside production)
+- Verify by calling `GET /debug-sentry` and confirming event appears in Sentry.
+
 ## Security
 
 - Never commit `.env` — it holds DB passwords and optional `MEDICAL_BACKEND_API_KEY`.

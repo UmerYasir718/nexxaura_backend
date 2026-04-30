@@ -1,0 +1,553 @@
+{
+  "uid": "nexxaura-unified-all",
+  "title": "Nexxaura Unified Metrics (All-in-One)",
+  "description": "Single-pane operations dashboard for Node API + Worker + FastAPI + Redis. Includes saturation, RED metrics, slow endpoints, large endpoints (traffic-heavy), DB, cache, queue, and upstream latency.",
+  "tags": ["nexxaura", "unified", "overview", "operations"],
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "refresh": "15s",
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prom-default" },
+        "refresh": 1,
+        "definition": "label_values(http_requests_total, service)",
+        "query": "label_values(http_requests_total, service)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": ".*" }
+      }
+    ]
+  },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Requests / sec",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{service=~\"$service\"}[5m])) or vector(0)", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Error rate (5xx %)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
+      "targets": [
+        {
+          "expr": "(sum(rate(http_requests_total{service=~\"$service\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total{service=~\"$service\"}[5m])), 0.0001)) * 100",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "HTTP p95 latency",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service=~\"$service\"}[5m]))) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "HTTP p99 latency",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=~\"$service\"}[5m]))) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "CPU usage %",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_process_cpu_user_seconds_total{service=~\"$service\"}[5m]) + rate(node_process_cpu_system_seconds_total{service=~\"$service\"}[5m])) * 100",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "RAM RSS",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 },
+      "targets": [
+        { "expr": "sum(node_process_resident_memory_bytes{service=~\"$service\"}) or vector(0)", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Event loop p95 lag",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(node_event_loop_lag_seconds_bucket{service=~\"$service\"}[5m]))) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Queue backlog",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 0 },
+      "targets": [
+        { "expr": "sum(queue_backlog{service=~\"$service\"}) or vector(0)", "refId": "A" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Traffic + Errors (RPS)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{service=~\"$service\"}[5m]))", "refId": "A", "legendFormat": "total_rps" },
+        { "expr": "sum(rate(http_requests_total{service=~\"$service\",status=~\"4..\"}[5m]))", "refId": "B", "legendFormat": "4xx_rps" },
+        { "expr": "sum(rate(http_requests_total{service=~\"$service\",status=~\"5..\"}[5m]))", "refId": "C", "legendFormat": "5xx_rps" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Latency percentiles (p50/p95/p99)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+          "refId": "C",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Latency bucket distribution (stable)",
+      "description": "Replaces heatmap rendering due to Grafana heatmap range error; shows bucket-rate distribution over time.",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum by (le) (rate(http_request_duration_seconds_bucket{service=~\"$service\"}[5m]))",
+          "legendFormat": "<= {{le}}s",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "HTTP status mix by class",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{service=~\"$service\",status=~\"2..\"}[5m]))", "refId": "A", "legendFormat": "2xx" },
+        { "expr": "sum(rate(http_requests_total{service=~\"$service\",status=~\"3..\"}[5m]))", "refId": "B", "legendFormat": "3xx" },
+        { "expr": "sum(rate(http_requests_total{service=~\"$service\",status=~\"4..\"}[5m]))", "refId": "C", "legendFormat": "4xx" },
+        { "expr": "sum(rate(http_requests_total{service=~\"$service\",status=~\"5..\"}[5m]))", "refId": "D", "legendFormat": "5xx" }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Slow endpoints (Top 15 by p95 latency)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "topk(15, histogram_quantile(0.95, sum by (route, le) (rate(http_request_duration_seconds_bucket{service=~\"$service\"}[5m]))))",
+          "instant": true,
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Large endpoints (Top 15 by traffic)",
+      "description": "Payload-size metric is not instrumented yet; this panel shows largest/highest-traffic endpoints.",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
+      "targets": [
+        {
+          "expr": "topk(15, sum by (route) (rate(http_requests_total{service=~\"$service\"}[5m])))",
+          "instant": true,
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Heavy endpoints (Top 15 by DB queries/request p95)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+      "targets": [
+        {
+          "expr": "topk(15, histogram_quantile(0.95, sum by (route, le) (rate(http_request_db_query_count_bucket{service=~\"$service\"}[5m]))))",
+          "instant": true,
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "CPU by service",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(node_process_cpu_user_seconds_total{service=~\"$service\"}[5m]) + rate(node_process_cpu_system_seconds_total{service=~\"$service\"}[5m])) * 100",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "RAM by service (RSS)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 28 },
+      "targets": [
+        {
+          "expr": "sum by (service) (node_process_resident_memory_bytes{service=~\"$service\"})",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Node event loop lag p95 by service",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 28 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (service, le) (rate(node_event_loop_lag_seconds_bucket{service=~\"$service\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "DB query rate + duration p95",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "targets": [
+        { "expr": "sum(rate(db_queries_total{service=~\"$service\"}[5m]))", "refId": "A", "legendFormat": "db_qps" },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(db_query_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "db_p95_s"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "DB pool (total / idle / waiting)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "targets": [
+        { "expr": "sum(db_pool_size_total{service=~\"$service\"})", "refId": "A", "legendFormat": "pool_total" },
+        { "expr": "sum(db_pool_size_idle{service=~\"$service\"})", "refId": "B", "legendFormat": "pool_idle" },
+        { "expr": "sum(db_pool_size_waiting{service=~\"$service\"})", "refId": "C", "legendFormat": "pool_waiting" }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Redis memory, ops, and clients",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "targets": [
+        { "expr": "max(redis_memory_used_bytes) or max(redis_used_memory_bytes) or vector(0)", "refId": "A", "legendFormat": "redis_memory_bytes" },
+        { "expr": "sum(redis_instantaneous_ops_per_sec) or vector(0)", "refId": "B", "legendFormat": "redis_ops_per_sec" },
+        { "expr": "sum(redis_connected_clients) or vector(0)", "refId": "C", "legendFormat": "redis_connected_clients" }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Queue throughput + failures + p95 duration",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "targets": [
+        { "expr": "sum(rate(queue_jobs_enqueued_total{service=~\"$service\"}[5m])) or vector(0)", "refId": "A", "legendFormat": "enqueued_rps" },
+        { "expr": "sum(rate(queue_jobs_completed_total{service=~\"$service\"}[5m])) or vector(0)", "refId": "B", "legendFormat": "completed_rps" },
+        { "expr": "sum(rate(queue_jobs_failed_total{service=~\"$service\"}[5m])) or vector(0)", "refId": "C", "legendFormat": "failed_rps" },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(queue_job_duration_seconds_bucket{service=~\"$service\"}[5m]))) or vector(0)",
+          "refId": "D",
+          "legendFormat": "job_p95_s"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Outbound upstream latency + timeouts",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (target, le) (rate(http_outbound_request_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "{{target}} p95"
+        },
+        {
+          "expr": "sum by (target) (rate(http_outbound_timeouts_total{service=~\"$service\"}[5m]))",
+          "refId": "B",
+          "legendFormat": "{{target}} timeouts_rps"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Security + control signals",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+      "targets": [
+        { "expr": "sum(rate(http_auth_failures_total{service=~\"$service\"}[5m])) or vector(0)", "refId": "A", "legendFormat": "auth_failures_rps" },
+        { "expr": "sum(rate(http_rate_limit_rejections_total{service=~\"$service\"}[5m])) or vector(0)", "refId": "B", "legendFormat": "rate_limited_rps" },
+        { "expr": "sum(http_requests_in_flight{service=~\"$service\"}) or vector(0)", "refId": "C", "legendFormat": "in_flight" }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Request rate by HTTP method",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 60 },
+      "targets": [
+        {
+          "expr": "sum by (method) (rate(http_requests_total{service=~\"$service\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{method}}"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "table",
+      "title": "Top 4xx endpoints (5m)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 60 },
+      "targets": [
+        {
+          "expr": "topk(15, sum by (route) (rate(http_requests_total{service=~\"$service\",status=~\"4..\"}[5m])))",
+          "instant": true,
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "table",
+      "title": "Top 5xx endpoints (5m)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 60 },
+      "targets": [
+        {
+          "expr": "topk(15, sum by (route) (rate(http_requests_total{service=~\"$service\",status=~\"5..\"}[5m])))",
+          "instant": true,
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Cache hits vs misses + hit ratio %",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 68 },
+      "targets": [
+        { "expr": "sum(rate(cache_hits_total{service=~\"$service\"}[5m])) or vector(0)", "refId": "A", "legendFormat": "cache_hits_rps" },
+        { "expr": "sum(rate(cache_misses_total{service=~\"$service\"}[5m])) or vector(0)", "refId": "B", "legendFormat": "cache_misses_rps" },
+        {
+          "expr": "(sum(rate(cache_hits_total{service=~\"$service\"}[5m])) / clamp_min(sum(rate(cache_hits_total{service=~\"$service\"}[5m])) + sum(rate(cache_misses_total{service=~\"$service\"}[5m])), 0.0001)) * 100",
+          "refId": "C",
+          "legendFormat": "cache_hit_ratio_pct"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Cache operation latency p95 by op",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 68 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (op, le) (rate(cache_operation_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "{{op}} p95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Queue retries + worker concurrency",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 76 },
+      "targets": [
+        { "expr": "sum(rate(queue_jobs_retried_total{service=~\"$service\"}[5m])) or vector(0)", "refId": "A", "legendFormat": "retried_rps" },
+        { "expr": "sum(queue_worker_concurrency{service=~\"$service\"}) or vector(0)", "refId": "B", "legendFormat": "worker_concurrency" }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Redis evictions + command rate",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 76 },
+      "targets": [
+        { "expr": "sum(rate(redis_evicted_keys_total[5m])) or vector(0)", "refId": "A", "legendFormat": "evicted_keys_rps" },
+        { "expr": "sum(redis_instantaneous_ops_per_sec) or vector(0)", "refId": "B", "legendFormat": "redis_ops_per_sec" }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Service uptime (hours)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 76 },
+      "targets": [
+        {
+          "expr": "max by (service) ((time() - node_process_start_time_seconds{service=~\"$service\"})) / 3600",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "h" } }
+    },
+    {
+      "id": 33,
+      "type": "table",
+      "title": "Build/version info",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 84 },
+      "targets": [
+        {
+          "expr": "app_info{service=~\"$service\"}",
+          "instant": true,
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "DB ops by operation",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 84 },
+      "targets": [
+        {
+          "expr": "sum by (op) (rate(db_queries_total{service=~\"$service\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{op}}"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "404 Not Found rate by route",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 92 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(http_requests_total{service=~\"$service\",status=\"404\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "table",
+      "title": "Top 404 Not Found APIs (5m)",
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 92 },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (route, method) (rate(http_requests_total{service=~\"$service\",status=\"404\"}[5m])))",
+          "instant": true,
+          "refId": "A",
+          "legendFormat": "{{method}} {{route}}"
+        }
+      ]
+    }
+  ]
+}

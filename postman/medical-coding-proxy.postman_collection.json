@@ -1,53 +1,112 @@
 {
   "info": {
-    "name": "Medical coding / transcription proxy (via Nexxaura gateway)",
-    "description": "These requests hit the **Node gateway** (default :4000), which proxies to FastAPI (MEDICAL_BACKEND_BASE_URL). Keep keys only in .env on the FastAPI side unless you add server-side auth here.",
+    "name": "Medical Independent Flows (Nexxaura gateway)",
+    "description": "Proxy collection for independent_flows APIs from the medical backend.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://127.0.0.1:4000" },
-    { "key": "summaryText", "value": "Patient presents for follow-up. Assessment: stable. Plan: continue current management." }
+    {
+      "key": "summaryText",
+      "value": "Patient with type 2 diabetes and hypertension seen for follow-up. Continue metformin and lisinopril. Monitor labs in 3 months."
+    },
+    {
+      "key": "transcriptText",
+      "value": "Doctor: How have you been feeling since your last visit? Patient: Better overall, less dizziness, taking medications regularly."
+    }
   ],
   "item": [
     {
-      "name": "Gateway only — /health",
-      "request": { "method": "GET", "url": "{{baseUrl}}/health" }
-    },
-    {
-      "name": "Upstream health — GET / (FastAPI)",
-      "request": { "method": "GET", "url": "{{baseUrl}}/" }
-    },
-    {
-      "name": "POST /api/coding/assign-codes",
+      "name": "POST /api/independent/transcribe-audio",
       "request": {
         "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "description": "Independent flow: Transcribe audio only.",
         "body": {
-          "mode": "raw",
-          "raw": "{\n  \"summary_report\": \"{{summaryText}}\",\n  \"specialty\": null,\n  \"patient_history\": null,\n  \"model\": \"openai\"\n}"
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": "" }
+          ]
         },
-        "url": "{{baseUrl}}/api/coding/assign-codes"
+        "url": "{{baseUrl}}/api/independent/transcribe-audio"
       }
     },
     {
-      "name": "POST /api/coding/assign-codes-stream (SSE)",
+      "name": "POST /api/independent/generate-report",
       "request": {
         "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "text/event-stream" }],
+        "description": "Independent flow: Generate structured report from transcript.",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"summary_report\": \"{{summaryText}}\"\n}"
+          "raw": "{\n  \"transcript\": \"{{transcriptText}}\"\n}"
         },
-        "url": "{{baseUrl}}/api/coding/assign-codes-stream"
+        "url": "{{baseUrl}}/api/independent/generate-report"
       }
     },
     {
-      "name": "POST /api/download/report-txt",
+      "name": "POST /api/independent/parse-pdf",
       "request": {
         "method": "POST",
+        "description": "Independent flow: Parse PDF only.",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": "" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/independent/parse-pdf"
+      }
+    },
+    {
+      "name": "POST /api/independent/code-icd",
+      "request": {
+        "method": "POST",
+        "description": "Independent flow: ICD coding only.",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"content\": \"## Report\\nline\"\n}" },
-        "url": "{{baseUrl}}/api/download/report-txt"
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"summary_report\": \"{{summaryText}}\",\n  \"specialty\": \"Internal Medicine\",\n  \"patient_history\": \"Diabetes and hypertension history\"\n}"
+        },
+        "url": "{{baseUrl}}/api/independent/code-icd"
+      }
+    },
+    {
+      "name": "POST /api/independent/code-cpt",
+      "request": {
+        "method": "POST",
+        "description": "Independent flow: CPT coding only.",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"summary_report\": \"{{summaryText}}\",\n  \"specialty\": \"Internal Medicine\",\n  \"patient_history\": \"Diabetes and hypertension history\",\n  \"icd_codes\": [\n    {\n      \"code\": \"E11.9\",\n      \"description\": \"Type 2 diabetes mellitus without complications\"\n    }\n  ]\n}"
+        },
+        "url": "{{baseUrl}}/api/independent/code-cpt"
+      }
+    },
+    {
+      "name": "POST /api/independent/denial-prevention",
+      "request": {
+        "method": "POST",
+        "description": "Independent flow: Denial prevention only.",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"summary_report\": \"{{summaryText}}\",\n  \"specialty\": \"Internal Medicine\",\n  \"codes\": [\n    {\n      \"code\": \"99214\",\n      \"description\": \"Office outpatient visit\"\n    },\n    {\n      \"code\": \"E11.9\",\n      \"description\": \"Type 2 diabetes mellitus without complications\"\n    }\n  ]\n}"
+        },
+        "url": "{{baseUrl}}/api/independent/denial-prevention"
+      }
+    },
+    {
+      "name": "POST /api/independent/risk-mitigation",
+      "request": {
+        "method": "POST",
+        "description": "Independent flow: Risk mitigation only.",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"summary_report\": \"{{summaryText}}\",\n  \"specialty\": \"Internal Medicine\",\n  \"codes\": [\n    {\n      \"code\": \"99214\",\n      \"description\": \"Office outpatient visit\"\n    },\n    {\n      \"code\": \"E11.9\",\n      \"description\": \"Type 2 diabetes mellitus without complications\"\n    }\n  ],\n  \"denial_report\": {\n    \"status\": \"Flagged\",\n    \"flagged_issues\": [\n      {\n        \"reasoning\": \"Diagnosis and procedure specificity mismatch\",\n        \"suggested_fix\": \"Use a more specific CPT/ICD pairing\"\n      }\n    ]\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/independent/risk-mitigation"
       }
     }
   ]

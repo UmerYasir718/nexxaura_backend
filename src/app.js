@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const Sentry = require('@sentry/node');
 const env = require('./config/env');
 const authRoutes = require('./routes/authRoutes');
 const syncRoutes = require('./routes/syncRoutes');
@@ -49,6 +50,33 @@ app.use('/api/users', userRoutes);
 app.post('/graphql', requireAuth, handleGraphql);
 
 app.use(medicalProxyRoutes);
+
+app.get('/debug-sentry', (_req, res) => {
+  if (!env.sentry.debugRouteEnabled) {
+    return res.status(404).json({ message: 'Not found' });
+  }
+  return Sentry.startSpan(
+    {
+      op: 'test',
+      name: 'Sentry Test Span',
+    },
+    () => {
+      if (Sentry.logger && typeof Sentry.logger.info === 'function') {
+        Sentry.logger.info('User triggered test error', { action: 'test_error_span' });
+      }
+      const error = new Error('Intentional Sentry test error from /debug-sentry');
+      const eventId = Sentry.captureException(error);
+      return res.status(500).json({
+        message: error.message,
+        sentry_event_id: eventId,
+      });
+    },
+  );
+});
+
+if (env.sentry.enabled) {
+  Sentry.setupExpressErrorHandler(app);
+}
 
 app.use(errorMiddleware);
 

@@ -17,6 +17,18 @@ function boolEnv(name, def) {
   if (process.env[name] == null || process.env[name] === '') return def;
   return String(process.env[name]).toLowerCase() === 'true' || process.env[name] === '1';
 }
+function numberEnv(name, def) {
+  if (process.env[name] == null || process.env[name] === '') return def;
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) ? n : def;
+}
+function normalizeMedicalBackendBaseUrl(raw) {
+  const input = String(raw || '').trim();
+  if (!input) return 'http://127.0.0.1:8000';
+  const noHash = input.split('#')[0];
+  const noQuery = noHash.split('?')[0];
+  return noQuery.replace(/\/docs\/?$/i, '').replace(/\/+$/, '');
+}
 
 module.exports = {
   serviceName: process.env.SERVICE_NAME || 'nexxaura-node',
@@ -51,7 +63,7 @@ module.exports = {
   },
   /** FastAPI medical backend (transcription + coding) — do not commit real URLs/keys; use .env */
   medicalBackend: {
-    baseUrl: (process.env.MEDICAL_BACKEND_BASE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, ''),
+    baseUrl: normalizeMedicalBackendBaseUrl(process.env.MEDICAL_BACKEND_BASE_URL),
     timeoutMs: Number(process.env.MEDICAL_BACKEND_TIMEOUT_MS || 300000),
     /** Health/root probe: separate shorter timeout for FastAPI liveness */
     healthTimeoutMs: Number(process.env.MEDICAL_BACKEND_HEALTH_TIMEOUT_MS || 10000),
@@ -79,5 +91,16 @@ module.exports = {
     maxAudioMb: Number(process.env.MEDICAL_MAX_AUDIO_MB || 100),
     maxDiagnosisPdfMb: Number(process.env.MEDICAL_MAX_DIAGNOSIS_PDF_MB || 50),
     minExtractedChars: Number(process.env.MEDICAL_MIN_EXTRACTED_CHARS || 50),
+  },
+  sentry: {
+    dsn: process.env.SENTRY_DSN || process.env.dsn || '',
+    enabled: Boolean((process.env.SENTRY_DSN || process.env.dsn || '').trim()),
+    tracesSampleRate: numberEnv('SENTRY_TRACES_SAMPLE_RATE', 1.0),
+    profileSessionSampleRate: numberEnv('SENTRY_PROFILE_SESSION_SAMPLE_RATE', 1.0),
+    profileLifecycle: process.env.SENTRY_PROFILE_LIFECYCLE || 'trace',
+    enableLogs: boolEnv('SENTRY_ENABLE_LOGS', true),
+    sendDefaultPii: boolEnv('SENTRY_SEND_DEFAULT_PII', true),
+    environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
+    debugRouteEnabled: boolEnv('SENTRY_TEST_ROUTE_ENABLED', process.env.NODE_ENV !== 'production'),
   },
 };
