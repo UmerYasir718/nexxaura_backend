@@ -49,6 +49,7 @@ describe('medicalRules (table-driven)', () => {
   });
 
   it('exposes expected audio set', () => {
-    expect(AUDIO_EXT.size).toBe(6);
+    const expected = ['.flac', '.m4a', '.mp3', '.ogg', '.wav', '.webm', '.mpeg'];
+    expect([...AUDIO_EXT]).toEqual(expected);
   });
 });
