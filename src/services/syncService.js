@@ -8,6 +8,21 @@ const {
   runAvailityStage,
 } = require("./pipelineService");
 
+function decryptVendorPasswordOrThrow(cipherText, providerLabel) {
+  try {
+    return decryptCredentialPassword(cipherText);
+  } catch (e) {
+    const msg = String(e?.message || e || "");
+    if (/authenticate data|unsupported state/i.test(msg)) {
+      throw new HttpError(
+        400,
+        `${providerLabel} credentials could not be decrypted. This usually means encryption key/secret changed after credentials were saved. Please re-save ${providerLabel} credentials.`,
+      );
+    }
+    throw e;
+  }
+}
+
 function compactOfficeAllyRows(rows) {
   return (rows || []).map((r) => ({
     patientId: r["Patient ID"] || null,
@@ -75,11 +90,11 @@ async function fetchCredentialsForE2E(userId) {
   return {
     officeAllyCreds: {
       username: r.oa_username,
-      password: decryptCredentialPassword(r.oa_password),
+      password: decryptVendorPasswordOrThrow(r.oa_password, "Office Ally"),
     },
     availityCreds: {
       username: r.av_username,
-      password: decryptCredentialPassword(r.av_password),
+      password: decryptVendorPasswordOrThrow(r.av_password, "Availity"),
     },
   };
 }
@@ -98,7 +113,7 @@ async function fetchOfficeAllyCreds(userId) {
   }
   return {
     username: row.username,
-    password: decryptCredentialPassword(row.password),
+    password: decryptVendorPasswordOrThrow(row.password, "Office Ally"),
   };
 }
 
@@ -116,7 +131,7 @@ async function fetchAvailityCreds(userId) {
   }
   return {
     username: row.username,
-    password: decryptCredentialPassword(row.password),
+    password: decryptVendorPasswordOrThrow(row.password, "Availity"),
   };
 }
 

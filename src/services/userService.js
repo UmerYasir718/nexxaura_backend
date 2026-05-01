@@ -1,7 +1,6 @@
 const bcrypt = require("bcryptjs");
 const db = require("../config/db");
 const HttpError = require("../utils/httpError");
-const { encryptCredentialPassword } = require("../utils/credentialCrypto");
 
 const ROLES = new Set(["admin", "doctor", "staff", "reception"]);
 
@@ -76,7 +75,7 @@ async function createUserByAdmin({
         [
           user.id,
           String(officeAlly.username).trim(),
-          encryptCredentialPassword(String(officeAlly.password)),
+          String(officeAlly.password),
         ],
       );
     }
@@ -87,7 +86,7 @@ async function createUserByAdmin({
         [
           user.id,
           String(availity.username).trim(),
-          encryptCredentialPassword(String(availity.password)),
+          String(availity.password),
         ],
       );
     }
@@ -193,7 +192,7 @@ async function upsertOfficeAllyCredentials(userId, payload) {
       d.description,
       d.name,
       d.officeallyusernameOrEmail,
-      encryptCredentialPassword(d.password),
+      d.password,
     ],
   );
   return { userId, provider: "office_ally", saved: true };
@@ -225,7 +224,7 @@ async function upsertAvailityCredentials(userId, payload) {
       d.description,
       d.name,
       d.availityusernameOrEmail,
-      encryptCredentialPassword(d.password),
+      d.password,
     ],
   );
   return { userId, provider: "availity", saved: true };
@@ -258,7 +257,7 @@ async function upsertUserCredentials(userId, payload) {
       normalized.description,
       normalized.name,
       normalized.officeallyusernameOrEmail,
-      encryptCredentialPassword(oaPassword),
+      oaPassword,
     ],
   );
 
@@ -282,7 +281,7 @@ async function upsertUserCredentials(userId, payload) {
       normalized.description,
       normalized.name,
       normalized.availityusernameOrEmail,
-      encryptCredentialPassword(avPassword),
+      avPassword,
     ],
   );
 
