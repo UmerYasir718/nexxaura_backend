@@ -1,76 +1,59 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE}
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: nexxaura_main
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: ${POSTGRES_HEALTHCHECK_INTERVAL}
+      timeout: ${POSTGRES_HEALTHCHECK_TIMEOUT}
+      retries: ${POSTGRES_HEALTHCHECK_RETRIES}
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE}
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT}:${REDIS_PORT}"
     healthcheck:
       test: ["CMD", "redis-cli", "PING"]
-      interval: 5s
-      timeout: 2s
-      retries: 5
+      interval: ${REDIS_HEALTHCHECK_INTERVAL}
+      timeout: ${REDIS_HEALTHCHECK_TIMEOUT}
+      retries: ${REDIS_HEALTHCHECK_RETRIES}
 
   redis-exporter:
-    image: oliver006/redis_exporter:v1.55.0
+    image: ${REDIS_EXPORTER_IMAGE}
     environment:
-      REDIS_ADDR: redis:6379
+      REDIS_ADDR: redis:${REDIS_PORT}
     ports:
-      - "9121:9121"
+      - "${REDIS_EXPORTER_PORT}:${REDIS_EXPORTER_PORT}"
     depends_on:
       - redis
 
   # Replace with your real FastAPI; this stub exposes / and /metrics
   fastapi:
     build:
-      context: ./observability/stub_fastapi
+      context: ${FASTAPI_STUB_CONTEXT}
     ports:
-      - "8000:8000"
+      - "${FASTAPI_PORT}:${FASTAPI_PORT}"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 3s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${FASTAPI_PORT}/')"]
+      interval: ${FASTAPI_HEALTHCHECK_INTERVAL}
+      timeout: ${FASTAPI_HEALTHCHECK_TIMEOUT}
+      retries: ${FASTAPI_HEALTHCHECK_RETRIES}
+      start_period: ${FASTAPI_HEALTHCHECK_START_PERIOD}
 
   node-api:
     build: .
     command: ["node", "src/server.js"]
-    environment:
-      PORT: "4000"
-      PGHOST: postgres
-      PGPORT: "5432"
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PGDATABASE: nexxaura_main
-      REDIS_URL: redis://redis:6379
-      USE_SYNC_QUEUE: "1"
-      NODE_ENV: production
-      METRICS_ENABLED: "true"
-      MEDICAL_BACKEND_BASE_URL: http://fastapi:8000
-      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:4000
-      SENTRY_DSN: ${SENTRY_DSN:-}
-      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-1.0}
-      SENTRY_PROFILE_SESSION_SAMPLE_RATE: ${SENTRY_PROFILE_SESSION_SAMPLE_RATE:-1.0}
-      SENTRY_PROFILE_LIFECYCLE: ${SENTRY_PROFILE_LIFECYCLE:-trace}
-      SENTRY_ENABLE_LOGS: ${SENTRY_ENABLE_LOGS:-true}
-      SENTRY_SEND_DEFAULT_PII: ${SENTRY_SEND_DEFAULT_PII:-true}
-      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-docker-local}
-      SENTRY_TEST_ROUTE_ENABLED: ${SENTRY_TEST_ROUTE_ENABLED:-true}
+    env_file:
+      - .env
     ports:
-      - "4000:4000"
+      - "${PORT}:${PORT}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,26 +65,10 @@ services:
   node-worker:
     build: .
     command: ["node", "src/worker.js"]
-    environment:
-      WORKER_METRICS_PORT: "9109"
-      PGHOST: postgres
-      PGPORT: "5432"
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PGDATABASE: nexxaura_main
-      REDIS_URL: redis://redis:6379
-      USE_SYNC_QUEUE: "1"
-      NODE_ENV: production
-      METRICS_ENABLED: "true"
-      SENTRY_DSN: ${SENTRY_DSN:-}
-      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-1.0}
-      SENTRY_PROFILE_SESSION_SAMPLE_RATE: ${SENTRY_PROFILE_SESSION_SAMPLE_RATE:-1.0}
-      SENTRY_PROFILE_LIFECYCLE: ${SENTRY_PROFILE_LIFECYCLE:-trace}
-      SENTRY_ENABLE_LOGS: ${SENTRY_ENABLE_LOGS:-true}
-      SENTRY_SEND_DEFAULT_PII: ${SENTRY_SEND_DEFAULT_PII:-true}
-      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-docker-local}
+    env_file:
+      - .env
     ports:
-      - "9109:9109"
+      - "${WORKER_METRICS_PORT}:${WORKER_METRICS_PORT}"
     depends_on:
       redis:
         condition: service_healthy
@@ -109,13 +76,13 @@ services:
         condition: service_healthy
 
   prometheus:
-    image: prom/prometheus:v2.45.0
+    image: ${PROMETHEUS_IMAGE}
     command:
       - --config.file=/etc/prometheus/prometheus.yml
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT}:${PROMETHEUS_PORT}"
     depends_on:
       - node-api
       - node-worker
@@ -123,15 +90,17 @@ services:
       - redis-exporter
 
   grafana:
-    image: grafana/grafana:10.4.5
+    image: ${GRAFANA_IMAGE}
+    env_file:
+      - .env
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: ${GF_USERS_ALLOW_SIGN_UP}
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT}:${GRAFANA_PORT}"
     depends_on:
       - prometheus
