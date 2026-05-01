@@ -6,7 +6,22 @@ const { SERVICE } = m;
 
 const statementTimeoutMs = Math.max(100, env.pg.statementTimeoutMs);
 const lockTimeoutMs = Math.min(statementTimeoutMs, 15000);
+const pgOptions = `-c search_path=public -c statement_timeout=${statementTimeoutMs} -c lock_timeout=${lockTimeoutMs}`;
 const QUERY_WRAPPED = Symbol('nexxauraQueryWrapped');
+let hasLoggedFirstConnect = false;
+
+function describeDbTarget() {
+  if (env.databaseUrl) {
+    try {
+      const u = new URL(env.databaseUrl);
+      const dbName = String(u.pathname || '/').replace(/^\//, '') || 'unknown';
+      return `${u.hostname}/${dbName}`;
+    } catch {
+      return 'database_url';
+    }
+  }
+  return `${env.postgres.host}/${env.postgres.database}`;
+}
 
 const pool = new Pool({
   ...(env.databaseUrl ? { connectionString: env.databaseUrl } : env.postgres),
@@ -14,7 +29,20 @@ const pool = new Pool({
   max: env.pg.maxPoolSize,
   connectionTimeoutMillis: env.pg.connectTimeoutMs,
   idleTimeoutMillis: 30_000,
-  options: `-c statement_timeout=${statementTimeoutMs} -c lock_timeout=${lockTimeoutMs}`,
+  options: pgOptions,
+});
+
+pool.on('connect', () => {
+  if (!hasLoggedFirstConnect) {
+    hasLoggedFirstConnect = true;
+    // eslint-disable-next-line no-console
+    console.log(`[db] connected: ${describeDbTarget()} ssl=${env.pgSsl ? 'on' : 'off'}`);
+  }
+});
+
+pool.on('error', (err) => {
+  // eslint-disable-next-line no-console
+  console.error('[db] pool error:', err?.message || err);
 });
 
 function updatePoolGauges() {
