@@ -24,8 +24,7 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-// Handle OPTIONS preflight for every route before any other middleware.
-app.options("*", cors(corsOptions));
+// cors() handles OPTIONS preflight automatically for all routes.
 app.use(cors(corsOptions));
 
 app.use(requestContextMiddleware);
