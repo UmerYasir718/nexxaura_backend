@@ -1,51 +1,57 @@
 services:
   postgres:
-    image: ${POSTGRES_IMAGE}
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     env_file:
       - .env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-nexxaura_main}
     ports:
-      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+      - "${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: ${POSTGRES_HEALTHCHECK_INTERVAL}
-      timeout: ${POSTGRES_HEALTHCHECK_TIMEOUT}
-      retries: ${POSTGRES_HEALTHCHECK_RETRIES}
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: ${POSTGRES_HEALTHCHECK_INTERVAL:-5s}
+      timeout: ${POSTGRES_HEALTHCHECK_TIMEOUT:-3s}
+      retries: ${POSTGRES_HEALTHCHECK_RETRIES:-5}
 
   redis:
-    image: ${REDIS_IMAGE}
+    image: ${REDIS_IMAGE:-redis:7-alpine}
     ports:
-      - "${REDIS_PORT}:${REDIS_PORT}"
+      - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}"
     healthcheck:
       test: ["CMD", "redis-cli", "PING"]
-      interval: ${REDIS_HEALTHCHECK_INTERVAL}
-      timeout: ${REDIS_HEALTHCHECK_TIMEOUT}
-      retries: ${REDIS_HEALTHCHECK_RETRIES}
+      interval: ${REDIS_HEALTHCHECK_INTERVAL:-5s}
+      timeout: ${REDIS_HEALTHCHECK_TIMEOUT:-2s}
+      retries: ${REDIS_HEALTHCHECK_RETRIES:-5}
 
   redis-exporter:
-    image: ${REDIS_EXPORTER_IMAGE}
+    image: ${REDIS_EXPORTER_IMAGE:-oliver006/redis_exporter:v1.55.0}
     environment:
-      REDIS_ADDR: redis:${REDIS_PORT}
+      REDIS_ADDR: redis:${REDIS_PORT:-6379}
     ports:
-      - "${REDIS_EXPORTER_PORT}:${REDIS_EXPORTER_PORT}"
+      - "${REDIS_EXPORTER_PORT:-9121}:${REDIS_EXPORTER_PORT:-9121}"
     depends_on:
       - redis
 
   # Replace with your real FastAPI; this stub exposes / and /metrics
   fastapi:
     build:
-      context: ${FASTAPI_STUB_CONTEXT}
+      context: ${FASTAPI_STUB_CONTEXT:-./observability/stub_fastapi}
     ports:
-      - "${FASTAPI_PORT}:${FASTAPI_PORT}"
+      - "${FASTAPI_PORT:-8000}:${FASTAPI_PORT:-8000}"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${FASTAPI_PORT}/')"]
-      interval: ${FASTAPI_HEALTHCHECK_INTERVAL}
-      timeout: ${FASTAPI_HEALTHCHECK_TIMEOUT}
-      retries: ${FASTAPI_HEALTHCHECK_RETRIES}
-      start_period: ${FASTAPI_HEALTHCHECK_START_PERIOD}
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${FASTAPI_PORT:-8000}/')",
+        ]
+      interval: ${FASTAPI_HEALTHCHECK_INTERVAL:-10s}
+      timeout: ${FASTAPI_HEALTHCHECK_TIMEOUT:-3s}
+      retries: ${FASTAPI_HEALTHCHECK_RETRIES:-5}
+      start_period: ${FASTAPI_HEALTHCHECK_START_PERIOD:-3s}
 
   node-api:
     build: .
@@ -53,7 +59,7 @@ services:
     env_file:
       - .env
     ports:
-      - "${PORT}:${PORT}"
+      - "${PORT:-4000}:${PORT:-4000}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,7 +74,7 @@ services:
     env_file:
       - .env
     ports:
-      - "${WORKER_METRICS_PORT}:${WORKER_METRICS_PORT}"
+      - "${WORKER_METRICS_PORT:-9109}:${WORKER_METRICS_PORT:-9109}"
     depends_on:
       redis:
         condition: service_healthy
@@ -76,13 +82,13 @@ services:
         condition: service_healthy
 
   prometheus:
-    image: ${PROMETHEUS_IMAGE}
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v2.45.0}
     command:
       - --config.file=/etc/prometheus/prometheus.yml
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "${PROMETHEUS_PORT}:${PROMETHEUS_PORT}"
+      - "${PROMETHEUS_PORT:-9090}:${PROMETHEUS_PORT:-9090}"
     depends_on:
       - node-api
       - node-worker
@@ -90,17 +96,17 @@ services:
       - redis-exporter
 
   grafana:
-    image: ${GRAFANA_IMAGE}
+    image: ${GRAFANA_IMAGE:-grafana/grafana:10.4.5}
     env_file:
       - .env
     environment:
-      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
-      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
-      GF_USERS_ALLOW_SIGN_UP: ${GF_USERS_ALLOW_SIGN_UP}
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: ${GF_USERS_ALLOW_SIGN_UP:-false}
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "${GRAFANA_PORT}:${GRAFANA_PORT}"
+      - "${GRAFANA_PORT:-3000}:${GRAFANA_PORT:-3000}"
     depends_on:
       - prometheus
