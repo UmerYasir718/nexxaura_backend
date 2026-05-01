@@ -7,6 +7,7 @@ const env = require('../config/env');
 const redis = require('../config/redis');
 const { buildAvailityConfig } = require('../config/availityConfigForUser');
 const { scrapeAppointmentsByDate } = require('../playwright/officeAllyClient');
+const { availityLoginWithApiOtp } = require('../playwright/availityOtpFlow');
 const { withAsyncTimeout } = require('../utils/withAsyncTimeout');
 const cacheService = require('./cacheService');
 
@@ -580,9 +581,29 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
       syncId,
       hasStoredState
         ? 'Availity: restoring saved session'
-        : 'Availity: logging in (enter authenticator code in browser if required)',
+        : 'Availity: logging in',
     ]);
-    await scraper.availityLogin(ctx);
+    await availityLoginWithApiOtp(page, ctx, availityCreds, logger, {
+      onAwaitingOtp: async () => {
+        await db.query(
+          "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity', message = $2 WHERE id = $1",
+          [syncId, 'Availity MFA required: enter OTP code to continue'],
+        );
+      },
+      getOtp: async () => {
+        const code = await getOtpFromRedis(syncId);
+        await db.query(
+          "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity', message = $2 WHERE id = $1",
+          [syncId, 'Availity OTP received, validating code'],
+        );
+        return code;
+      },
+    });
+    await ctx.browser.saveStorageState?.();
+    await db.query("UPDATE sync_requests SET status = 'running', current_stage = 'availity', message = $2 WHERE id = $1", [
+      syncId,
+      'Availity MFA complete, continuing',
+    ]);
 
     await db.query("UPDATE sync_requests SET status = 'running', current_stage = 'availity', message = $2 WHERE id = $1", [
       syncId,
