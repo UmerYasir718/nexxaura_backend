@@ -298,28 +298,11 @@ async function scrapeAppointmentsByDate({
     }
 
     await page.locator("#w-dropdown-toggle-4").click();
-    // wait a bit
-    await page.waitForTimeout(2000);
     await page.locator("#nav_practice").click();
-    // wait a bit
-    await page.waitForTimeout(2000);
-
-    // fallback: use whichever page is NOT login page
-    const pages = context.pages();
-
-    const newPage = pages.find(p => {
-      const url = p.url();
-      console.log("Checking page URL:", url);
-      return !url.includes("auth.officeally.com");
+    const newPage = await context.waitForEvent("page", {
+      timeout: 30000,
     });
-
-    console.log("Selected page:", newPage?.url());
-    if (!newPage) {
-      throw new Error("Failed to get OfficeAlly dashboard page");
-    }
-    // const newPage = await context.waitForEvent("page", {
-    //   timeout: 30000,
-    // });
+    console.log(newPage);
     console.log("Current URL1:", newPage.url());
     await newPage.screenshot({ path: "debug-after-login1.png", fullPage: true });
     await newPage.waitForLoadState("domcontentloaded");
