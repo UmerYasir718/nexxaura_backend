@@ -312,9 +312,9 @@ async function scrapeAppointmentsByDate({
     if (!newPage) {
       throw new Error("Failed to get OfficeAlly dashboard page");
     }
-    const newPage = await context.waitForEvent("page", {
-      timeout: 30000,
-    });
+    // const newPage = await context.waitForEvent("page", {
+    //   timeout: 30000,
+    // });
     console.log("Current URL1:", newPage.url());
     await newPage.screenshot({ path: "debug-after-login1.png", fullPage: true });
     await newPage.waitForLoadState("domcontentloaded");
