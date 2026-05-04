@@ -305,9 +305,11 @@ async function scrapeAppointmentsByDate({
     // fallback: use whichever page is NOT login page
     const pages = context.pages();
 
-    const newPage = pages.find(p =>
-      !p.url().includes("auth.officeally.com")
-    );
+    const newPage = pages.find(p => {
+      const url = p.url();
+      console.log("Checking page URL:", url);
+      return !url.includes("auth.officeally.com");
+    });
 
     if (!newPage) {
       throw new Error("Failed to get OfficeAlly dashboard page");
