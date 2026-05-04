@@ -299,12 +299,18 @@ async function scrapeAppointmentsByDate({
 
     await page.locator("#w-dropdown-toggle-4").click();
     await page.locator("#nav_practice").click();
-    const [newPage] = await Promise.all([
-      context.waitForEvent("page"),
-      page.locator("#nav_practice").click(),
-    ]);
-
+    const newPage = await context.waitForEvent("page", {
+      timeout: 30000,
+    });
+    console.log("Current URL1:", newPage.url());
+    await newPage.screenshot({ path: "debug-after-login1.png", fullPage: true });
     await newPage.waitForLoadState("domcontentloaded");
+    // console.log("Current URL2:", newPage.url());
+    // await newPage.screenshot({ path: "debug-after-login2.png", fullPage: true });
+    await newPage.screenshot({
+      path: "debug-login-page.png",
+      fullPage: true,
+    });
     await newPage
       .locator("input[name='username'], #username")
       .first()
