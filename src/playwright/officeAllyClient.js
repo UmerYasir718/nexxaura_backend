@@ -299,9 +299,28 @@ async function scrapeAppointmentsByDate({
 
     await page.locator("#w-dropdown-toggle-4").click();
     await page.locator("#nav_practice").click();
-    const newPage = await context.waitForEvent("page", {
-      timeout: 30000,
-    });
+    await page.locator("#nav_practice").click();
+
+    // wait for either redirect OR popup
+    await page.waitForTimeout(3000);
+
+    const pages = context.pages();
+
+    console.log("ALL PAGES:");
+    for (const p of pages) {
+      console.log(p.url());
+    }
+
+    const newPage = pages.find(p =>
+      p.url().includes("cms.officeally.com") ||
+      p.url().includes("auth.officeally.com")
+    );
+
+    if (!newPage) {
+      throw new Error("No usable OfficeAlly page found");
+    }
+
+    await newPage.bringToFront();
     console.log(newPage);
     console.log("Current URL1:", newPage.url());
     await newPage.screenshot({ path: "debug-after-login1.png", fullPage: true });
