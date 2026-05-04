@@ -269,9 +269,11 @@ async function scrapeAppointmentsByDate({
   const browser = await chromium.launch({
     headless: env.officeAlly.headless, slowMo: 300
   });
-  const page = await browser.newPage({
+  const context = await browser.newContext({
     viewport: { width: 1365, height: 900 },
   });
+
+  const page = await context.newPage();
 
 
   try {
