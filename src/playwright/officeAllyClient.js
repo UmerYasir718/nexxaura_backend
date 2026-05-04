@@ -298,6 +298,8 @@ async function scrapeAppointmentsByDate({
     }
 
     await page.locator("#w-dropdown-toggle-4").click();
+    // wait a bit
+    await page.waitForTimeout(2000);
     await page.locator("#nav_practice").click();
     // wait a bit
     await page.waitForTimeout(2000);
@@ -311,6 +313,7 @@ async function scrapeAppointmentsByDate({
       return !url.includes("auth.officeally.com");
     });
 
+    console.log("Selected page:", newPage?.url());
     if (!newPage) {
       throw new Error("Failed to get OfficeAlly dashboard page");
     }
