@@ -266,64 +266,90 @@ async function scrapeAppointmentsByDate({
   if (!officeAllyUsername || !officeAllyPassword) {
     throw new Error("Office Ally credentials missing for user");
   }
-
-  const browser = await chromium.launch({ headless: env.officeAlly.headless });
+  const browser = await chromium.launch({
+    headless: env.officeAlly.headless, slowMo: 300
+  });
   const page = await browser.newPage({
     viewport: { width: 1365, height: 900 },
   });
+
 
   try {
     await page.goto(env.officeAlly.baseUrl, {
       waitUntil: "domcontentloaded",
       timeout: 120000,
     });
-    await page
+    await page.goto(env.officeAlly.baseUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 120000,
+    });
+    console.log("?? Navigated to:", page.url());
+
+    await page.screenshot({
+      path: "debug-login-page.png",
+      fullPage: true,
+    });
+    if (await page.locator("text=human visitor").isVisible().catch(() => false)) {
+      console.log("⚠️ CAPTCHA detected");
+      await page.screenshot({ path: "captcha.png" });
+      throw new Error("CAPTCHA blocking automation");
+    }
+
+    await page.locator("#w-dropdown-toggle-4").click();
+    await page.locator("#nav_practice").click();
+    const [newPage] = await Promise.all([
+      context.waitForEvent("page"),
+      page.locator("#nav_practice").click(),
+    ]);
+
+    await newPage.waitForLoadState("domcontentloaded");
+    await newPage
       .locator("input[name='username'], #username")
       .first()
       .fill(officeAllyUsername);
-    await page
+    await newPage
       .locator("input[name='password'], #password")
       .first()
       .fill(officeAllyPassword);
-    await page
+    await newPage
       .locator("button[type='submit'], input[type='submit']")
       .first()
       .click();
-    await page
+    await newPage
       .waitForLoadState("networkidle", { timeout: 120000 })
       .catch(() => {});
 
     // Office Ally renders appointments in Daily View table (#tblDailyApp).
     // Open the exact day URL first, then fallback to date controls if needed.
     const dailyUrl = buildDailyViewUrl(env.officeAlly.baseUrl, appointmentDate);
-    await page
+    await newPage
       .goto(dailyUrl, { waitUntil: "domcontentloaded", timeout: 120000 })
       .catch(() => {});
-    const dailyTable = page.locator("#tblDailyApp").first();
+    const dailyTable = newPage.locator("#tblDailyApp").first();
     if (!(await dailyTable.isVisible({ timeout: 5000 }).catch(() => false))) {
       const { year, month, day } = parseDateParts(appointmentDate);
-      await page
+      await newPage
         .locator("#ctl00_phFolderContent_Appointments_GoToDate_Month")
         .fill(String(month))
         .catch(() => {});
-      await page
+      await newPage
         .locator("#ctl00_phFolderContent_Appointments_GoToDate_Day")
         .fill(String(day))
         .catch(() => {});
-      await page
+      await newPage
         .locator("#ctl00_phFolderContent_Appointments_GoToDate_Year")
         .fill(String(year))
         .catch(() => {});
-      await page
+      await newPage
         .locator("#ctl00_phFolderContent_Appointments_btnGotoDate")
         .click({ timeout: 10000 })
         .catch(() => {});
     }
-    await page
+    await newPage
       .locator("#tblDailyApp")
       .waitFor({ state: "visible", timeout: 30000 });
 
-    const rows = await page.evaluate(() => {
+    const rows = await newPage.evaluate(() => {
       const clean = (v) =>
         String(v || "")
           .replace(/\s+/g, " ")
@@ -394,20 +420,20 @@ async function scrapeAppointmentsByDate({
         const patientUrl =
           row.PatientUrl ||
           buildPatientEditUrl(env.officeAlly.baseUrl, patientId, "P");
-        await page.goto(patientUrl, {
+        await newPage.goto(patientUrl, {
           waitUntil: "domcontentloaded",
           timeout: 120000,
         });
-        await page
+        await newPage
           .locator("#tblTab0")
           .waitFor({ state: "attached", timeout: 30000 });
 
-        const patientData = await scrapePatientAndInsuranceDetails(page);
+        const patientData = await scrapePatientAndInsuranceDetails(newPage);
 
         // Move to insurance tab for read-only scrape.
         let onInsuranceTab = false;
         try {
-          const insuranceTabLink = page
+          const insuranceTabLink = newPage
             .locator("a[href*='Tab=I'], a:has-text('Insurance')")
             .first();
           if (
@@ -416,7 +442,7 @@ async function scrapeAppointmentsByDate({
               .catch(() => false)
           ) {
             await insuranceTabLink.click({ timeout: 5000 });
-            await page
+            await newPage
               .waitForLoadState("domcontentloaded", { timeout: 30000 })
               .catch(() => {});
             onInsuranceTab = true;
@@ -426,18 +452,18 @@ async function scrapeAppointmentsByDate({
         }
         if (!onInsuranceTab) {
           const insuranceUrl = withTab(patientUrl, "I");
-          await page
+          await newPage
             .goto(insuranceUrl, {
               waitUntil: "domcontentloaded",
               timeout: 120000,
             })
             .catch(() => {});
         }
-        await page
+        await newPage
           .locator("#tblTab1")
           .waitFor({ state: "attached", timeout: 30000 })
           .catch(() => {});
-        const insuranceData = await scrapePatientAndInsuranceDetails(page);
+        const insuranceData = await scrapePatientAndInsuranceDetails(newPage);
 
         detailsByPatientId[patientId] = {
           patientTab: patientData.patientTab || {},
