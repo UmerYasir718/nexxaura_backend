@@ -299,6 +299,19 @@ async function scrapeAppointmentsByDate({
 
     await page.locator("#w-dropdown-toggle-4").click();
     await page.locator("#nav_practice").click();
+    // wait a bit
+    await page.waitForTimeout(2000);
+
+    // fallback: use whichever page is NOT login page
+    const pages = context.pages();
+
+    const newPage = pages.find(p =>
+      !p.url().includes("auth.officeally.com")
+    );
+
+    if (!newPage) {
+      throw new Error("Failed to get OfficeAlly dashboard page");
+    }
     const newPage = await context.waitForEvent("page", {
       timeout: 30000,
     });
