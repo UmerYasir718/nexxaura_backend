@@ -34,6 +34,18 @@ function pickFirstNonEmpty(...values) {
   return values.find((v) => String(v || '').trim()) || null;
 }
 
+function isMeaningfulText(v) {
+  return Boolean(String(v || '').trim());
+}
+
+function countEmptyInsuranceDbFields(rows) {
+  let empty = 0;
+  for (const v of rows) {
+    if (!isMeaningfulText(v)) empty += 1;
+  }
+  return empty;
+}
+
 function normalizeTextToken(v) {
   return String(v || '')
     .toLowerCase()
@@ -532,6 +544,22 @@ async function bulkPersistOfficeAllyScrape(p) {
       appendInsurance(patientId, 1, ins.primaryInsurance);
       appendInsurance(patientId, 2, ins.secondaryInsurance);
       appendInsurance(patientId, 3, ins.thirdInsurance);
+    }
+
+    const primaryRows = insRanks
+      .map((rank, idx) => (rank === 1 ? idx : null))
+      .filter((idx) => idx != null);
+    const emptyPrimaryPayer = countEmptyInsuranceDbFields(
+      primaryRows.map((i) => insPayerNames[i]),
+    );
+    const emptyPrimaryMember = countEmptyInsuranceDbFields(
+      primaryRows.map((i) => insMemberIds[i]),
+    );
+    if (primaryRows.length) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[date-sync] insurance field check rank=1 rows=${primaryRows.length} empty_payer_name=${emptyPrimaryPayer} empty_member_id=${emptyPrimaryMember}`,
+      );
     }
 
     let insuranceOut = [];

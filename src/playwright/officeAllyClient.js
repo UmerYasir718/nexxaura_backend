@@ -88,12 +88,16 @@ function decodeHtmlEntities(value) {
 }
 
 function extractInputValueById(html, id) {
-  const re = new RegExp(
-    `<[^>]*(?:id|name)=["'][^"']*${escapeRegExp(id)}[^"']*["'][^>]*\\svalue=["']([^"']*)["'][^>]*>`,
+  const body = String(html || "");
+  const openTag = new RegExp(
+    `<(input|textarea)[^>]*(?:id|name)=["']${escapeRegExp(id)}["'][^>]*>`,
     "i",
   );
-  const m = re.exec(String(html || ""));
-  return decodeHtmlEntities(m?.[1] || "");
+  const m = openTag.exec(body);
+  if (!m) return "";
+  const tag = m[0] || "";
+  const valueMatch = /\bvalue=["']([^"']*)["']/i.exec(tag);
+  return decodeHtmlEntities(valueMatch?.[1] || "");
 }
 
 function extractSelectedTextById(html, id) {
@@ -317,10 +321,48 @@ function parseAppointmentsFromDailyHtml(html, pageUrl) {
   return rows;
 }
 
+function parseEmbeddedPatientDetailsPayload(html) {
+  const body = String(html || "");
+  const startRe = /<script[^>]*\bid=["']nexxaura-zyte-patient-payload["'][^>]*>/i;
+  const startMatch = startRe.exec(body);
+  if (!startMatch) return { data: {}, diagnostics: { scriptFound: false } };
+  const startIdx = startMatch.index + startMatch[0].length;
+  const endIdx = body.indexOf("</script>", startIdx);
+  if (endIdx === -1) {
+    return { data: {}, diagnostics: { scriptFound: true, parseError: "no_closing_script_tag" } };
+  }
+  const jsonText = body.slice(startIdx, endIdx).trim();
+  try {
+    return {
+      data: JSON.parse(jsonText || "{}"),
+      diagnostics: { scriptFound: true, jsonLength: jsonText.length },
+    };
+  } catch (e) {
+    return {
+      data: {},
+      diagnostics: {
+        scriptFound: true,
+        jsonLength: jsonText.length,
+        parseError: e?.message || "json_parse_failed",
+        jsonHead: jsonText.slice(0, 500),
+        jsonTail: jsonText.slice(Math.max(0, jsonText.length - 500)),
+      },
+    };
+  }
+}
+
 function detectZyteHtmlState(html) {
   const body = String(html || "").toLowerCase();
   if (!body.trim()) return "empty_html";
   if (body.includes("tbldailyapp")) return "appointments_table_present";
+  if (
+    body.includes("editpatient.aspx") ||
+    body.includes("ctl00_phfoldercontent_ucpatient_insurancename") ||
+    body.includes("ctl00_phfoldercontent_ucpatient_insurancesubscriberid") ||
+    body.includes("id=\"tbltab1\"")
+  ) {
+    return "patient_detail_present";
+  }
   if (
     body.includes("input name=\"username\"") ||
     body.includes("id=\"username\"") ||
@@ -366,6 +408,8 @@ async function requestZyteRenderedHtml({
   officeAllyPassword,
   postLoginWaitSeconds = 12,
   calendarDateTitle = "",
+  expectedHtmlStates = [],
+  collectPatientDetailsInPage = false,
 }) {
   const apiKey = String(env.officeAlly.zyteApiKey || "").trim();
   if (!apiKey) return null;
@@ -379,6 +423,20 @@ async function requestZyteRenderedHtml({
     baseUrl,
   ).toString();
   const css = (value) => ({ type: "css", value });
+
+  const zytePatientCollectorActions = collectPatientDetailsInPage
+    ? [
+        {
+          action: "evaluate",
+          source: `(function(){window.__nxSetPayload=function(o){var n=document.getElementById("nexxaura-zyte-patient-payload");if(!n){n=document.createElement("script");n.id="nexxaura-zyte-patient-payload";n.type="application/json";document.body.appendChild(n);}n.textContent=JSON.stringify(o||{});};window.__nxClean=function(v){return String(v||"").replace(/\\s+/g," ").trim();};window.__nxSel=function(d,id){var el=d.getElementById(id);if(!el||!el.options)return"";var opt=Array.prototype.slice.call(el.options).filter(function(x){return x.selected;})[0];return window.__nxClean(opt?opt.textContent:"");};window.__nxVal=function(d,id){var el=d.getElementById(id);return window.__nxClean(el?el.value:"");};window.__nxTxt=function(d,id){var el=d.getElementById(id);return window.__nxClean(el?el.textContent:"");};window.__nxParseI=function(html){var d=new DOMParser().parseFromString(String(html||""),"text/html");function v(id){return window.__nxVal(d,id);}function t(id){return window.__nxTxt(d,id);}function s(id){return window.__nxSel(d,id);}var p=v("ctl00_phFolderContent_ucPatient_PAEnrollment_hdnPAPatientID")||v("ctl00_phFolderContent_ucPatient_hdnPatientID");var P="ctl00_phFolderContent_ucPatient_";var pri={insuranceType:t("lblMultiSelectddlPatientInsuranceType"),insuranceCompanyId:v(P+"InsuranceID"),insuranceName:v(P+"InsuranceName"),insuredId:v(P+"InsuredID"),insuredLastName:v(P+"InsuredLastName"),insuredFirstName:v(P+"InsuredFirstName"),relationshipToInsured:s(P+"lstRelationshipToInsuredID"),subscriberId:v(P+"InsuranceSubscriberID"),groupNo:v(P+"InsuranceGroupNo"),planName:v(P+"InsurancePlanName")};var sec={insuranceType:t("lblMultiSelectddlPatientInsuranceType2"),insuranceCompanyId:v(P+"SecondaryInsuranceID"),insuranceName:v(P+"SecondaryInsuranceName"),insuredId:v(P+"SecondaryInsuredID"),relationshipToInsured:s(P+"lstRelationshipToSecondaryInsuredID"),subscriberId:v(P+"SecondaryInsuranceSubscriberID"),groupNo:v(P+"SecondaryInsuranceGroupNo"),planName:v(P+"SecondaryInsurancePlanName")};var thi={insuranceType:t("lblMultiSelectddlPatientInsuranceType3"),insuranceCompanyId:v(P+"ThirdInsuranceID"),insuranceName:v(P+"ThirdInsuranceName"),insuredId:v(P+"ThirdInsuredID"),relationshipToInsured:s(P+"lstRelationshipToThirdInsuredID"),subscriberId:v(P+"ThirdInsuranceSubscriberID"),groupNo:v(P+"ThirdInsuranceGroupNo"),planName:v(P+"ThirdInsurancePlanName")};return{patientTab:{patientId:p},insuranceTab:{primaryInsurance:pri,secondaryInsurance:sec,thirdInsurance:thi}}};window.__nxFetchTextSync=function(url){var x=new XMLHttpRequest();x.open("GET",url,false);x.withCredentials=true;x.send(null);return{status:x.status||0,text:String(x.responseText||"")};};window.__nxCollectFromDaily=function(){try{var out={},seen={},trs=document.querySelectorAll("#tblDailyApp tr");for(var i=0;i<trs.length;i++){var cells=trs[i].querySelectorAll("td");if(cells.length<10)continue;var pc=cells[3],a=pc&&pc.querySelector("a"),h=a?a.getAttribute("href")||"":"";if(!h)continue;var abs;try{abs=new URL(h,window.location.href).toString();}catch(e){continue;}var pid=(/[?&](?:PID|PatientID|InsuredID|ID)=(\\d+)/i.exec(abs)||[])[1]||"",key=pid||abs;if(!key||seen[key])continue;seen[key]=1;try{var fetchUrl=(function(a,pid){try{var u=new URL(a,window.location.href);if(!/EditPatient\\.aspx/i.test(u.pathname))return a;var id=String(pid||"").trim();if(id)u.searchParams.set("PID",id);u.searchParams.set("Tab","P");u.searchParams.set("PageAction","edit");if(!u.searchParams.get("From"))u.searchParams.set("From","ViewAppointments");return u.toString();}catch(e){return a;}})(abs,pid);var r=window.__nxFetchTextSync(fetchUrl);var html=r.text||"";var low=html.toLowerCase();var parsed=window.__nxParseI(html);parsed.__debug={httpStatus:r.status,respLen:html.length,fetchUrl:fetchUrl,insuranceFetchMode:"patient_tab_html",hasTblTab1:low.indexOf("tbltab1")>=0,hasInsuranceNameId:html.indexOf("ctl00_phFolderContent_ucPatient_InsuranceName")>=0,looksLikeLogin:low.indexOf('id="username"')>=0||low.indexOf("name='username'")>=0||low.indexOf('name="username"')>=0};out[key]=parsed;}catch(err){out[key]={scrapeError:String(err&&err.message?err.message:"detail fetch failed")};}}window.__nxSetPayload(out);}catch(e2){window.__nxSetPayload({__error:String(e2&&e2.message?e2.message:"payload collection failed")});}};})();`,
+        },
+        {
+          action: "evaluate",
+          source: `(function(){if(window.__nxCollectFromDaily)window.__nxCollectFromDaily();})();`,
+        },
+        { action: "waitForTimeout", timeout: 3.0 },
+      ]
+    : [];
 
   // Zyte action grammar can differ by account/version.
   // Try a few compatible payload shapes before failing hard.
@@ -429,6 +487,7 @@ async function requestZyteRenderedHtml({
             : []),
           { action: "evaluate", source: `window.location.href = ${JSON.stringify(targetUrl)};` },
           { action: "waitForTimeout", timeout: 3.0 },
+          ...zytePatientCollectorActions,
         ],
       },
     },
@@ -464,133 +523,25 @@ async function requestZyteRenderedHtml({
           { action: "waitForTimeout", timeout: postLoginWaitSeconds },
           { action: "evaluate", source: `window.location.href = ${JSON.stringify(targetUrl)};` },
           { action: "waitForTimeout", timeout: postLoginWaitSeconds },
-        ],
-      },
-    },
-    {
-      label: "type+goto",
-      payload: {
-        url: baseUrl,
-        browserHtml: true,
-        screenshot: true,
-        actions: [
-          { action: "click", selector: css("#w-dropdown-toggle-4") },
-          { action: "click", selector: css("#nav_practice") },
-          {
-            action: "type",
-            selector: css("input[name='username']"),
-            value: officeAllyUsername,
-          },
-          {
-            action: "type",
-            selector: css("input[name='password']"),
-            value: officeAllyPassword,
-          },
-          { action: "click", selector: css("button[type='submit']") },
-          { action: "goto", url: targetUrl },
-        ],
-      },
-    },
-    {
-      label: "fill+goto",
-      payload: {
-        url: baseUrl,
-        browserHtml: true,
-        screenshot: true,
-        actions: [
-          { action: "click", selector: css("#w-dropdown-toggle-4") },
-          { action: "click", selector: css("#nav_practice") },
-          {
-            action: "fill",
-            selector: css("input[name='username']"),
-            value: officeAllyUsername,
-          },
-          {
-            action: "fill",
-            selector: css("input[name='password']"),
-            value: officeAllyPassword,
-          },
-          { action: "click", selector: css("button[type='submit']") },
-          { action: "goto", url: targetUrl },
-        ],
-      },
-    },
-    {
-      label: "type-direct-url",
-      payload: {
-        url: targetUrl,
-        browserHtml: true,
-        screenshot: true,
-        actions: [
-          { action: "click", selector: css("#w-dropdown-toggle-4") },
-          { action: "click", selector: css("#nav_practice") },
-          {
-            action: "type",
-            selector: css("input[name='username']"),
-            value: officeAllyUsername,
-          },
-          {
-            action: "type",
-            selector: css("input[name='password']"),
-            value: officeAllyPassword,
-          },
-          { action: "click", selector: css("button[type='submit']") },
-        ],
-      },
-    },
-    {
-      label: "type-text-no-goto",
-      payload: {
-        url: baseUrl,
-        browserHtml: true,
-        screenshot: true,
-        actions: [
-          { action: "click", selector: css("#w-dropdown-toggle-4") },
-          { action: "click", selector: css("#nav_practice") },
-          {
-            action: "type",
-            selector: css("input[name='username']"),
-            text: officeAllyUsername,
-          },
-          {
-            action: "type",
-            selector: css("input[name='password']"),
-            text: officeAllyPassword,
-          },
-          { action: "click", selector: css("button[type='submit']") },
-          { action: "waitForTimeout", timeout: 2.5 },
-        ],
-      },
-    },
-    {
-      label: "type-text-evaluate-nav",
-      payload: {
-        url: baseUrl,
-        browserHtml: true,
-        screenshot: true,
-        actions: [
-          { action: "click", selector: css("#w-dropdown-toggle-4") },
-          { action: "click", selector: css("#nav_practice") },
-          {
-            action: "type",
-            selector: css("input[name='username']"),
-            text: officeAllyUsername,
-          },
-          {
-            action: "type",
-            selector: css("input[name='password']"),
-            text: officeAllyPassword,
-          },
-          { action: "click", selector: css("button[type='submit']") },
-          { action: "evaluate", source: `window.location.href = ${JSON.stringify(targetUrl)};` },
-          { action: "waitForTimeout", timeout: 2.0 },
+          ...zytePatientCollectorActions,
         ],
       },
     },
   ];
+  const wantAppointments = expectedHtmlStates.includes("appointments_table_present");
+  const wantPatientDetail = expectedHtmlStates.includes("patient_detail_present");
+  const orderedVariants = wantPatientDetail
+    ? payloadVariants.filter((v) => v.label === "auth0-evaluate-submit")
+    : wantAppointments
+      ? payloadVariants.filter(
+          (v) =>
+            v.label === "auth0-evaluate-calendar-click" ||
+            v.label === "auth0-evaluate-submit",
+        )
+      : payloadVariants;
 
   let lastErr = null;
-  for (const variant of payloadVariants) {
+  for (const variant of orderedVariants) {
     try {
       // eslint-disable-next-line no-console
       console.log(`[zyte] trying variant=${variant.label} login_flow=start`);
@@ -605,12 +556,15 @@ async function requestZyteRenderedHtml({
       }).catch(() => {});
       const html = response?.data?.browserHtml || null;
       const state = detectZyteHtmlState(html || "");
-      const loginSuccess = state === "appointments_table_present";
+      const acceptableStates = Array.isArray(expectedHtmlStates) && expectedHtmlStates.length
+        ? expectedHtmlStates
+        : ["appointments_table_present", "patient_detail_present", "unknown_page_shape"];
+      const loginSuccess = acceptableStates.includes(state);
       // eslint-disable-next-line no-console
       console.log(
         `[zyte] variant=${variant.label} login_flow=done html_state=${state} login_success=${loginSuccess}`,
       );
-      if (html) return html;
+      if (html && loginSuccess) return html;
     } catch (error) {
       lastErr = error;
       // eslint-disable-next-line no-console
@@ -1096,25 +1050,59 @@ async function scrapeAppointmentsByDateViaPlaywright({
 
         const patientData = await scrapePatientAndInsuranceDetails(newPage);
 
-        // Move to insurance tab for read-only scrape.
+        // Insurance tab is client-side (e.g. javascript:ChangePatientTab(1);) — avoid deep-link Tab=I.
         let onInsuranceTab = false;
         try {
-          const insuranceTabLink = newPage
-            .locator("a[href*='Tab=I'], a:has-text('Insurance')")
-            .first();
-          if (
-            await insuranceTabLink
-              .isVisible({ timeout: 1500 })
-              .catch(() => false)
-          ) {
-            await insuranceTabLink.click({ timeout: 5000 });
-            await newPage
-              .waitForLoadState("domcontentloaded", { timeout: 30000 })
-              .catch(() => {});
-            onInsuranceTab = true;
-          }
+          onInsuranceTab = await newPage.evaluate(() => {
+            const fn = window.ChangePatientTab;
+            if (typeof fn !== "function") return false;
+            fn.call(window, 1);
+            return true;
+          });
         } catch {
           onInsuranceTab = false;
+        }
+        if (!onInsuranceTab) {
+          try {
+            const insuranceTabLink = newPage
+              .locator(
+                'a[href*="ChangePatientTab(1)"], #PatientTabs a:has-text("Insurance")',
+              )
+              .first();
+            if (
+              await insuranceTabLink
+                .isVisible({ timeout: 2000 })
+                .catch(() => false)
+            ) {
+              await insuranceTabLink.click({ timeout: 5000 });
+              await newPage
+                .waitForLoadState("domcontentloaded", { timeout: 30000 })
+                .catch(() => {});
+              onInsuranceTab = true;
+            }
+          } catch {
+            /* */
+          }
+        }
+        if (!onInsuranceTab) {
+          try {
+            const insuranceTabLink = newPage
+              .locator("a[href*='Tab=I'], a:has-text('Insurance')")
+              .first();
+            if (
+              await insuranceTabLink
+                .isVisible({ timeout: 1500 })
+                .catch(() => false)
+            ) {
+              await insuranceTabLink.click({ timeout: 5000 });
+              await newPage
+                .waitForLoadState("domcontentloaded", { timeout: 30000 })
+                .catch(() => {});
+              onInsuranceTab = true;
+            }
+          } catch {
+            /* */
+          }
         }
         if (!onInsuranceTab) {
           const insuranceUrl = withTab(patientUrl, "I");
@@ -1163,25 +1151,35 @@ async function scrapeAppointmentsByDateViaZyte({
     );
   }
   const dailyUrl = buildDailyViewUrl(env.officeAlly.baseUrl, appointmentDate);
+  // eslint-disable-next-line no-console
+  console.log(`[zyte] office ally scrape start date=${appointmentDate}`);
   let html = await requestZyteRenderedHtml({
     url: dailyUrl,
     officeAllyUsername,
     officeAllyPassword,
     calendarDateTitle: calendarTitleFromDate(appointmentDate),
+    expectedHtmlStates: ["appointments_table_present"],
+    collectPatientDetailsInPage: true,
   });
   if (!html) {
     throw new Error(
       "Zyte did not return rendered HTML. Check ZYTE_API_KEY and ZYTE_API_URL.",
     );
   }
+  // eslint-disable-next-line no-console
+  console.log("[zyte] daily HTML received; parsing appointment rows");
   let rows = parseAppointmentsFromDailyHtml(html, dailyUrl);
   if (!rows.length) {
+    // eslint-disable-next-line no-console
+    console.warn("[zyte] first pass parsed 0 rows; retrying with longer waits");
     const fallbackHtml = await requestZyteRenderedHtml({
       url: dailyUrl,
       officeAllyUsername,
       officeAllyPassword,
       postLoginWaitSeconds: 6,
       calendarDateTitle: calendarTitleFromDate(appointmentDate),
+      expectedHtmlStates: ["appointments_table_present"],
+      collectPatientDetailsInPage: true,
     });
     if (fallbackHtml) {
       html = fallbackHtml;
@@ -1195,71 +1193,50 @@ async function scrapeAppointmentsByDateViaZyte({
     );
   }
 
-  const detailsByPatientId = {};
-  const uniquePatients = rows.reduce((acc, row) => {
-    const patientId = String(row["Patient ID"] || "").trim();
-    const patientUrl = String(row.PatientUrl || "").trim();
-    const detailsKey = patientId || patientUrl;
-    if (!patientUrl || !detailsKey) return acc;
-    if (!acc.find((x) => x.detailsKey === detailsKey)) {
-      acc.push({ detailsKey, patientId, patientUrl });
-    }
-    return acc;
-  }, []);
-
   // eslint-disable-next-line no-console
-  console.log(`[zyte] patient detail fetch queue size=${uniquePatients.length}`);
-  const concurrency = 3;
-  const worker = async (item, index) => {
-    const { detailsKey, patientUrl } = item;
-    try {
-      const insuranceTabUrl = withTab(patientUrl, "I");
-      const insuranceHtml = await requestZyteRenderedHtml({
-        url: insuranceTabUrl,
-        officeAllyUsername,
-        officeAllyPassword,
-        postLoginWaitSeconds: 2,
-      });
-      const insuranceDetails = parsePatientAndInsuranceDetailsFromHtml(
-        insuranceHtml,
-      );
-      detailsByPatientId[detailsKey] = {
-        patientTab: insuranceDetails.patientTab || {},
-        insuranceTab: insuranceDetails.insuranceTab || {},
-      };
-      // eslint-disable-next-line no-console
-      console.log(
-        `[zyte] patient detail fetched ${index + 1}/${uniquePatients.length} key=${detailsKey}`,
-      );
-    } catch (error) {
-      detailsByPatientId[detailsKey] = {
-        scrapeError: error?.message || "Failed to scrape Zyte patient details",
-      };
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[zyte] patient detail failed ${index + 1}/${uniquePatients.length} key=${detailsKey} error=${error?.message || "unknown"}`,
-      );
-    }
-  };
+  console.log(`[zyte] appointment rows parsed count=${rows.length}`);
+  const { data: embeddedDetails, diagnostics: embeddedDiag } = parseEmbeddedPatientDetailsPayload(html);
+  // eslint-disable-next-line no-console
+  console.log(
+    `[zyte] embedded patient detail payload keys=${Object.keys(embeddedDetails || {}).length}`,
+  );
+  if (embeddedDiag?.parseError) {
+    // eslint-disable-next-line no-console
+    console.warn(`[zyte] embedded JSON parse issue: ${embeddedDiag.parseError}`);
+  }
+  if (embeddedDetails && embeddedDetails.__error) {
+    // eslint-disable-next-line no-console
+    console.warn(`[zyte] embedded patient payload error=${embeddedDetails.__error}`);
+  }
 
-  for (let i = 0; i < uniquePatients.length; i += concurrency) {
-    const batch = uniquePatients.slice(i, i + concurrency);
-    await Promise.all(batch.map((item, offset) => worker(item, i + offset)));
+  const uniq = new Set(
+    rows
+      .map((r) => String(r["Patient ID"] || "").trim() || String(r.PatientUrl || "").trim())
+      .filter(Boolean),
+  );
+  const missingPayloadKeys = [...uniq].filter((k) => !embeddedDetails[k]).length;
+  if (missingPayloadKeys) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[zyte] warning: ${missingPayloadKeys} unique patients missing embedded detail payload keys`,
+    );
   }
 
   return rows.map((row) => {
     const patientId = String(row["Patient ID"] || "").trim();
     const patientUrl = String(row.PatientUrl || "").trim();
     const detailsKey = patientId || patientUrl;
-    const details = detailsByPatientId[detailsKey] || null;
+    const details = embeddedDetails[detailsKey] || null;
     if (!details) return { ...row, patientDetails: null };
     const mergedPatientId =
       String(row["Patient ID"] || "").trim() ||
       String(details?.patientTab?.patientId || "").trim();
+    const patientDetails = { ...details };
+    delete patientDetails.__rawInsuranceHtml;
     return {
       ...row,
       "Patient ID": mergedPatientId,
-      patientDetails: details,
+      patientDetails,
     };
   });
 }
