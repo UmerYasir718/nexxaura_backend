@@ -34,6 +34,28 @@ function pickFirstNonEmpty(...values) {
   return values.find((v) => String(v || '').trim()) || null;
 }
 
+function normalizeTextToken(v) {
+  return String(v || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function buildSyntheticPatientKey(raw, index) {
+  const first = normalizeTextToken(raw['First Name'] || pickField(raw, /first\s*name/i));
+  const last = normalizeTextToken(raw['Last Name'] || pickField(raw, /last\s*name/i));
+  const dobIso = toIsoDate(raw['Date Of Birth'] || pickField(raw, /date\s*of\s*birth|dob/i));
+  const dob = normalizeTextToken(dobIso || '');
+  const rawPatient = normalizeTextToken(raw.RawPatient || '');
+  const appointmentId = normalizeTextToken(raw['Appointment ID'] || '');
+  const base = [first, last, dob].filter(Boolean).join('_');
+  if (base) return `synpid_${base}`;
+  if (rawPatient && dob) return `synpid_${rawPatient}_${dob}`;
+  if (rawPatient) return `synpid_${rawPatient}`;
+  if (appointmentId) return `synpid_appt_${appointmentId}`;
+  return `synpid_row_${index + 1}`;
+}
+
 function parseMoney(v) {
   if (v == null) return null;
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
@@ -365,9 +387,13 @@ async function bulkPersistOfficeAllyScrape(p) {
   const provs = [];
   const st = [];
   const reas = [];
+  let missingPmPatientIdCount = 0;
   for (let i = 0; i < n; i += 1) {
     const raw = rawAppointments[i];
-    const pmPatientId = String(raw['Patient ID'] || pickField(raw, /patient\s*id|account|acct|mrn|chart/i) || 'unknown-patient');
+    const extractedPmPatientId =
+      raw['Patient ID'] || pickField(raw, /patient\s*id|account|acct|mrn|chart/i);
+    const pmPatientId = String(extractedPmPatientId || buildSyntheticPatientKey(raw, i));
+    if (!extractedPmPatientId) missingPmPatientIdCount += 1;
     const details = raw.patientDetails || {};
     const pTab = details.patientTab || {};
     const firstName = pTab.firstName || pickField(raw, /first\s*name/i);
@@ -390,6 +416,12 @@ async function bulkPersistOfficeAllyScrape(p) {
     provs.push(raw.Provider || pickField(raw, /provider|doctor/i));
     st.push(raw.Status || pickField(raw, /status/i));
     reas.push(raw.Reason || pickField(raw, /reason|visit|type/i));
+  }
+  if (missingPmPatientIdCount > 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[date-sync] rows missing PM patient id=${missingPmPatientIdCount}; using synthetic patient keys`,
+    );
   }
 
   const client = await db.getClient();
