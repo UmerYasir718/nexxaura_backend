@@ -376,16 +376,20 @@ async function scrapePatientAndInsuranceDetails(page) {
       String(v || "")
         .replace(/\s+/g, " ")
         .trim();
-    const byId = (id) => document.getElementById(id);
-    const byIdValue = (id) => clean(byId(id)?.value);
-    const byIdText = (id) => clean(byId(id)?.textContent);
-    const selectedText = (id) => {
-      const el = byId(id);
+    const patientRoot = document.querySelector("#tblTab0") || document;
+    const insuranceRoot = document.querySelector("#tblTab1") || document;
+    const byIdWithin = (root, id) =>
+      root?.querySelector(`#${CSS.escape(id)}`) || document.getElementById(id);
+    const byId = (id) => byIdWithin(document, id);
+    const byIdValue = (id, root = document) => clean(byIdWithin(root, id)?.value);
+    const byIdText = (id, root = document) => clean(byIdWithin(root, id)?.textContent);
+    const selectedText = (id, root = document) => {
+      const el = byIdWithin(root, id);
       if (!el || !el.options) return "";
       const selected = Array.from(el.options).find((opt) => opt.selected);
       return clean(selected?.textContent);
     };
-    const multiLabelText = (id) => byIdText(`lblMultiSelect${id}`);
+    const multiLabelText = (id, root = document) => byIdText(`lblMultiSelect${id}`, root);
 
     const joinDateParts = (prefix) => {
       const m = byIdValue(`${prefix}_Month`);
@@ -409,87 +413,106 @@ async function scrapePatientAndInsuranceDetails(page) {
       patientId:
         byIdValue(
           "ctl00_phFolderContent_ucPatient_PAEnrollment_hdnPAPatientID",
-        ) || byIdValue("ctl00_phFolderContent_ucPatient_hdnPatientID"),
-      firstName: byIdValue("ctl00_phFolderContent_ucPatient_FirstName"),
-      middleName: byIdValue("ctl00_phFolderContent_ucPatient_MiddleName"),
-      lastName: byIdValue("ctl00_phFolderContent_ucPatient_LastName"),
+          patientRoot,
+        ) || byIdValue("ctl00_phFolderContent_ucPatient_hdnPatientID", patientRoot),
+      firstName: byIdValue("ctl00_phFolderContent_ucPatient_FirstName", patientRoot),
+      middleName: byIdValue("ctl00_phFolderContent_ucPatient_MiddleName", patientRoot),
+      lastName: byIdValue("ctl00_phFolderContent_ucPatient_LastName", patientRoot),
       dob: joinDateParts("ctl00_phFolderContent_ucPatient_DOB"),
-      sex: selectedText("ctl00_phFolderContent_ucPatient_lstGender"),
+      sex: selectedText("ctl00_phFolderContent_ucPatient_lstGender", patientRoot),
       maritalStatus: selectedText(
         "ctl00_phFolderContent_ucPatient_lstMaritalStatus",
+        patientRoot,
       ),
       employmentStatus: selectedText(
         "ctl00_phFolderContent_ucPatient_lstEmploymentStatus",
+        patientRoot,
       ),
       professionalTitle: byIdValue(
         "ctl00_phFolderContent_ucPatient_ProfessionalTitle",
+        patientRoot,
       ),
       preferredLanguage: selectedText(
         "ctl00_phFolderContent_ucPatient_ddlLanguage",
+        patientRoot,
       ),
-      religion: selectedText("ctl00_phFolderContent_ucPatient_ddlReligion"),
-      ethnicity: multiLabelText("ddlEthnicity"),
-      race: multiLabelText("ddlRace"),
-      addressLine1: byIdValue("ctl00_phFolderContent_ucPatient_AddressLine1"),
-      addressLine2: byIdValue("ctl00_phFolderContent_ucPatient_AddressLine2"),
-      city: byIdValue("ctl00_phFolderContent_ucPatient_City"),
-      state: selectedText("ctl00_phFolderContent_ucPatient_lstState"),
-      zip: byIdValue("ctl00_phFolderContent_ucPatient_Zip"),
+      religion: selectedText("ctl00_phFolderContent_ucPatient_ddlReligion", patientRoot),
+      ethnicity: multiLabelText("ddlEthnicity", patientRoot),
+      race: multiLabelText("ddlRace", patientRoot),
+      addressLine1: byIdValue("ctl00_phFolderContent_ucPatient_AddressLine1", patientRoot),
+      addressLine2: byIdValue("ctl00_phFolderContent_ucPatient_AddressLine2", patientRoot),
+      city: byIdValue("ctl00_phFolderContent_ucPatient_City", patientRoot),
+      state: selectedText("ctl00_phFolderContent_ucPatient_lstState", patientRoot),
+      zip: byIdValue("ctl00_phFolderContent_ucPatient_Zip", patientRoot),
       homePhone: joinPhone("ctl00_phFolderContent_ucPatient_HomePhone"),
       workPhone: joinPhone("ctl00_phFolderContent_ucPatient_WorkPhone"),
       cellPhone: joinPhone("ctl00_phFolderContent_ucPatient_CellPhone"),
       fax: joinPhone("ctl00_phFolderContent_ucPatient_Fax"),
       preferredPhone: selectedText(
         "ctl00_phFolderContent_ucPatient_lstPreferredPhone",
+        patientRoot,
       ),
-      email: byIdValue("ctl00_phFolderContent_ucPatient_Email"),
+      email: byIdValue("ctl00_phFolderContent_ucPatient_Email", patientRoot),
       communicationPreference: selectedText(
         "ctl00_phFolderContent_ucPatient_ddlPatientReminder",
+        patientRoot,
       ),
-      employerName: byIdValue("ctl00_phFolderContent_ucPatient_EmployerName"),
+      employerName: byIdValue("ctl00_phFolderContent_ucPatient_EmployerName", patientRoot),
       emergencyContactName: byIdValue(
         "ctl00_phFolderContent_ucPatient_EmergencyContactName",
+        patientRoot,
       ),
       emergencyContactRelation: byIdValue(
         "ctl00_phFolderContent_ucPatient_EmergencyContactRelation",
+        patientRoot,
       ),
       nextOfKinName: byIdValue(
         "ctl00_phFolderContent_ucPatient_NextKinContactName",
+        patientRoot,
       ),
       nextOfKinRelation: selectedText(
         "ctl00_phFolderContent_ucPatient_lstNextKinRelation",
+        patientRoot,
       ),
     };
 
     const primaryInsurance = {
-      insuranceType: multiLabelText("ddlPatientInsuranceType"),
+      insuranceType: multiLabelText("ddlPatientInsuranceType", insuranceRoot),
       insuranceCompanyId: byIdValue(
         "ctl00_phFolderContent_ucPatient_InsuranceID",
+        insuranceRoot,
       ),
-      insuranceName: byIdValue("ctl00_phFolderContent_ucPatient_InsuranceName"),
-      insuredId: byIdValue("ctl00_phFolderContent_ucPatient_InsuredID"),
+      insuranceName: byIdValue("ctl00_phFolderContent_ucPatient_InsuranceName", insuranceRoot),
+      insuredId: byIdValue("ctl00_phFolderContent_ucPatient_InsuredID", insuranceRoot),
       insuredLastName: byIdValue(
         "ctl00_phFolderContent_ucPatient_InsuredLastName",
+        insuranceRoot,
       ),
       insuredFirstName: byIdValue(
         "ctl00_phFolderContent_ucPatient_InsuredFirstName",
+        insuranceRoot,
       ),
       relationshipToInsured: selectedText(
         "ctl00_phFolderContent_ucPatient_lstRelationshipToInsuredID",
+        insuranceRoot,
       ),
       subscriberId: byIdValue(
         "ctl00_phFolderContent_ucPatient_InsuranceSubscriberID",
+        insuranceRoot,
       ),
-      groupNo: byIdValue("ctl00_phFolderContent_ucPatient_InsuranceGroupNo"),
-      planName: byIdValue("ctl00_phFolderContent_ucPatient_InsurancePlanName"),
+      groupNo: byIdValue("ctl00_phFolderContent_ucPatient_InsuranceGroupNo", insuranceRoot),
+      planName: byIdValue("ctl00_phFolderContent_ucPatient_InsurancePlanName", insuranceRoot),
       deductible: byIdValue(
         "ctl00_phFolderContent_ucPatient_InsuranceDeductible",
+        insuranceRoot,
       ),
       visitCopay: byIdValue(
         "ctl00_phFolderContent_ucPatient_InsuranceVisitCopay",
+        insuranceRoot,
       ),
       signatureOnFile: selectedText(
         "ctl00_phFolderContent_ucPatient_lstSignatureOnFile",
+        insuranceRoot,
       ),
       signatureDate: joinDateParts(
         "ctl00_phFolderContent_ucPatient_SignatureOnFileDate",
@@ -497,42 +520,54 @@ async function scrapePatientAndInsuranceDetails(page) {
     };
 
     const secondaryInsurance = {
-      insuranceType: multiLabelText("ddlPatientInsuranceType2"),
+      insuranceType: multiLabelText("ddlPatientInsuranceType2", insuranceRoot),
       insuranceCompanyId: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsuranceID",
+        insuranceRoot,
       ),
       insuranceName: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsuranceName",
+        insuranceRoot,
       ),
       insuredId: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsuredID",
+        insuranceRoot,
       ),
       insuredLastName: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsuredLastName",
+        insuranceRoot,
       ),
       insuredFirstName: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsuredFirstName",
+        insuranceRoot,
       ),
       relationshipToInsured: selectedText(
         "ctl00_phFolderContent_ucPatient_lstRelationshipToSecondaryInsuredID",
+        insuranceRoot,
       ),
       subscriberId: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsuranceSubscriberID",
+        insuranceRoot,
       ),
       groupNo: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsuranceGroupNo",
+        insuranceRoot,
       ),
       planName: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsurancePlanName",
+        insuranceRoot,
       ),
       deductible: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsuranceDeductible",
+        insuranceRoot,
       ),
       visitCopay: byIdValue(
         "ctl00_phFolderContent_ucPatient_SecondaryInsuranceVisitCopay",
+        insuranceRoot,
       ),
       signatureOnFile: selectedText(
         "ctl00_phFolderContent_ucPatient_lstSecondarySignatureOnFile",
+        insuranceRoot,
       ),
       signatureDate: joinDateParts(
         "ctl00_phFolderContent_ucPatient_SecondarySignatureOnFileDate",
@@ -540,37 +575,47 @@ async function scrapePatientAndInsuranceDetails(page) {
     };
 
     const thirdInsurance = {
-      insuranceType: multiLabelText("ddlPatientInsuranceType3"),
+      insuranceType: multiLabelText("ddlPatientInsuranceType3", insuranceRoot),
       insuranceCompanyId: byIdValue(
         "ctl00_phFolderContent_ucPatient_ThirdInsuranceID",
+        insuranceRoot,
       ),
       insuranceName: byIdValue(
         "ctl00_phFolderContent_ucPatient_ThirdInsuranceName",
+        insuranceRoot,
       ),
-      insuredId: byIdValue("ctl00_phFolderContent_ucPatient_ThirdInsuredID"),
+      insuredId: byIdValue("ctl00_phFolderContent_ucPatient_ThirdInsuredID", insuranceRoot),
       insuredLastName: byIdValue(
         "ctl00_phFolderContent_ucPatient_ThirdInsuredLastName",
+        insuranceRoot,
       ),
       insuredFirstName: byIdValue(
         "ctl00_phFolderContent_ucPatient_ThirdInsuredFirstName",
+        insuranceRoot,
       ),
       relationshipToInsured: selectedText(
         "ctl00_phFolderContent_ucPatient_lstRelationshipToThirdInsuredID",
+        insuranceRoot,
       ),
       subscriberId: byIdValue(
         "ctl00_phFolderContent_ucPatient_ThirdInsuranceSubscriberID",
+        insuranceRoot,
       ),
       groupNo: byIdValue(
         "ctl00_phFolderContent_ucPatient_ThirdInsuranceGroupNo",
+        insuranceRoot,
       ),
       planName: byIdValue(
         "ctl00_phFolderContent_ucPatient_ThirdInsurancePlanName",
+        insuranceRoot,
       ),
       deductible: byIdValue(
         "ctl00_phFolderContent_ucPatient_ThirdInsuranceDeductible",
+        insuranceRoot,
       ),
       visitCopay: byIdValue(
         "ctl00_phFolderContent_ucPatient_ThirdInsuranceVisitCopay",
+        insuranceRoot,
       ),
     };
 
