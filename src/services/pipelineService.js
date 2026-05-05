@@ -117,11 +117,16 @@ async function loadEligibilityScraper() {
   const rel = process.env.ELIGIBILITY_SCRAPER_PATH;
   const candidates = [];
   if (rel) {
-    candidates.push(path.isAbsolute(rel) ? rel : path.join(process.cwd(), rel));
+    const resolved = path.isAbsolute(rel) ? rel : path.join(process.cwd(), rel);
+    candidates.push(resolved);
+    candidates.push(path.join(resolved, 'eligibilityScraper.js'));
+    candidates.push(path.join(resolved, 'src', 'eligibilityScraper.js'));
   }
   candidates.push(
+    path.join(process.cwd(), 'availity', 'src', 'eligibilityScraper.js'),
     path.join(process.cwd(), 'scripts', 'availity', 'src', 'eligibilityScraper.js'),
     path.join(process.cwd(), '..', 'availity', 'src', 'eligibilityScraper.js'),
+    path.join(__dirname, '..', '..', 'availity', 'src', 'eligibilityScraper.js'),
     path.join(__dirname, '..', '..', 'scripts', 'availity', 'src', 'eligibilityScraper.js'),
     path.join(__dirname, '..', '..', '..', 'availity', 'src', 'eligibilityScraper.js'),
   );
