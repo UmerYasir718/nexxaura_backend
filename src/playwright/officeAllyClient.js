@@ -1,3 +1,4 @@
+const axios = require("axios");
 const { chromium } = require("playwright");
 const env = require("../config/env");
 
@@ -45,6 +46,103 @@ function withTab(urlLike, tab) {
   const u = new URL(urlLike);
   u.searchParams.set("Tab", tab);
   return u.toString();
+}
+
+function stripTags(html) {
+  return String(html || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseAppointmentsFromDailyHtml(html, pageUrl) {
+  const rows = [];
+  const tbodyMatch = /<table[^>]*id=["']tblDailyApp["'][\s\S]*?<tbody[^>]*>([\s\S]*?)<\/tbody>/i.exec(
+    String(html || ""),
+  );
+  if (!tbodyMatch) return rows;
+  const rowBlocks = tbodyMatch[1].match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  for (const tr of rowBlocks) {
+    const cells = tr.match(/<td[\s\S]*?<\/td>/gi) || [];
+    if (cells.length < 10) continue;
+    const patientCell = cells[3] || "";
+    const patientText = stripTags(patientCell);
+    if (!patientText) continue;
+    const hrefMatch = /<a[^>]*href=["']([^"']+)["']/i.exec(patientCell);
+    const href = hrefMatch?.[1] || "";
+    if (!href) continue;
+
+    let patientUrl = href;
+    if (!/^https?:\/\//i.test(patientUrl)) {
+      patientUrl = new URL(patientUrl, pageUrl).toString();
+    }
+    const patientId = /[?&]PID=(\d+)/i.exec(patientUrl)?.[1] || "";
+    const [lastName, firstName] = patientText.split(",").map((x) => stripTags(x));
+    const apptIcon = /<img[^>]*onclick=["'][^"']*EditAppointment\((\d+)/i.exec(tr);
+
+    rows.push({
+      "Patient ID": patientId,
+      "First Name": firstName || patientText,
+      "Last Name": lastName || "",
+      "Date Of Birth": stripTags(cells[4]),
+      "Appointment ID": apptIcon?.[1] || "",
+      Time: `${stripTags(cells[0])}${stripTags(cells[1]) ? `:${stripTags(cells[1])}` : ""}`,
+      Provider: stripTags(cells[6]),
+      Reason: stripTags(cells[7]),
+      Status: stripTags(cells[8]),
+      "Visit Length": stripTags(cells[2]),
+      RawPatient: patientText,
+      PatientUrl: patientUrl,
+    });
+  }
+  return rows;
+}
+
+async function requestZyteRenderedHtml({
+  url,
+  officeAllyUsername,
+  officeAllyPassword,
+}) {
+  const apiKey = String(env.officeAlly.zyteApiKey || "").trim();
+  if (!apiKey) return null;
+
+  const auth = Buffer.from(`${apiKey}:`).toString("base64");
+  const endpoint = String(env.officeAlly.zyteApiUrl || "https://api.zyte.com/v1/extract");
+  const payload = {
+    url: String(env.officeAlly.baseUrl || "").trim(),
+    browserHtml: true,
+    actions: [
+      { action: "click", selector: "#w-dropdown-toggle-4" },
+      { action: "click", selector: "#nav_practice" },
+      {
+        action: "type",
+        selector: "input[name='username'], #username",
+        value: officeAllyUsername,
+      },
+      {
+        action: "type",
+        selector: "input[name='password'], #password",
+        value: officeAllyPassword,
+      },
+      { action: "click", selector: "button[type='submit'], input[type='submit']" },
+      { action: "goto", url },
+    ],
+  };
+
+  const response = await axios.post(endpoint, payload, {
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json",
+    },
+    timeout: 120000,
+  });
+  return response?.data?.browserHtml || null;
 }
 
 async function scrapePatientAndInsuranceDetails(page) {
@@ -258,7 +356,7 @@ async function scrapePatientAndInsuranceDetails(page) {
   });
 }
 
-async function scrapeAppointmentsByDate({
+async function scrapeAppointmentsByDateViaPlaywright({
   appointmentDate,
   officeAllyUsername,
   officeAllyPassword,
@@ -277,6 +375,7 @@ async function scrapeAppointmentsByDate({
 
 
   try {
+    // 1) Reach Office Ally entry page and capture debug evidence early.
     await page.goto(env.officeAlly.baseUrl, {
       waitUntil: "domcontentloaded",
       timeout: 120000,
@@ -297,6 +396,7 @@ async function scrapeAppointmentsByDate({
       throw new Error("CAPTCHA blocking automation");
     }
 
+    // 2) Open the Practice login path and wait for auth window/page.
     await page.locator("#w-dropdown-toggle-4").click();
     await page.locator("#nav_practice").click();
     await page.locator("#nav_practice").click();
@@ -331,6 +431,7 @@ async function scrapeAppointmentsByDate({
       path: "debug-login-page.png",
       fullPage: true,
     });
+    // 3) Authenticate with provider credentials.
     await newPage
       .locator("input[name='username'], #username")
       .first()
@@ -347,8 +448,7 @@ async function scrapeAppointmentsByDate({
       .waitForLoadState("networkidle", { timeout: 120000 })
       .catch(() => {});
 
-    // Office Ally renders appointments in Daily View table (#tblDailyApp).
-    // Open the exact day URL first, then fallback to date controls if needed.
+    // 4) Navigate to requested day (URL first, date controls as fallback).
     const dailyUrl = buildDailyViewUrl(env.officeAlly.baseUrl, appointmentDate);
     await newPage
       .goto(dailyUrl, { waitUntil: "domcontentloaded", timeout: 120000 })
@@ -377,6 +477,7 @@ async function scrapeAppointmentsByDate({
       .locator("#tblDailyApp")
       .waitFor({ state: "visible", timeout: 30000 });
 
+    // 5) Parse the daily schedule table.
     const rows = await newPage.evaluate(() => {
       const clean = (v) =>
         String(v || "")
@@ -440,6 +541,7 @@ async function scrapeAppointmentsByDate({
       return parsed;
     });
 
+    // 6) Open each unique patient once to collect demographics + insurance tabs.
     const detailsByPatientId = {};
     for (const row of rows) {
       const patientId = row["Patient ID"];
@@ -504,6 +606,7 @@ async function scrapeAppointmentsByDate({
       }
     }
 
+    // 7) Attach details back onto each appointment row.
     return rows.map((row) => ({
       ...row,
       patientDetails: detailsByPatientId[row["Patient ID"]] || null,
@@ -511,6 +614,52 @@ async function scrapeAppointmentsByDate({
   } finally {
     await browser.close();
   }
+}
+
+async function scrapeAppointmentsByDateViaZyte({
+  appointmentDate,
+  officeAllyUsername,
+  officeAllyPassword,
+}) {
+  if (!env.officeAlly.zyteEnabled) return null;
+  const dailyUrl = buildDailyViewUrl(env.officeAlly.baseUrl, appointmentDate);
+  const html = await requestZyteRenderedHtml({
+    url: dailyUrl,
+    officeAllyUsername,
+    officeAllyPassword,
+  });
+  if (!html) return null;
+  const rows = parseAppointmentsFromDailyHtml(html, dailyUrl);
+  return rows.map((row) => ({ ...row, patientDetails: null }));
+}
+
+async function scrapeAppointmentsByDate({
+  appointmentDate,
+  officeAllyUsername,
+  officeAllyPassword,
+}) {
+  if (!officeAllyUsername || !officeAllyPassword) {
+    throw new Error("Office Ally credentials missing for user");
+  }
+
+  // Prefer Zyte when configured, but keep Playwright as a stable fallback path.
+  try {
+    const zyteRows = await scrapeAppointmentsByDateViaZyte({
+      appointmentDate,
+      officeAllyUsername,
+      officeAllyPassword,
+    });
+    if (Array.isArray(zyteRows) && zyteRows.length) return zyteRows;
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn("Zyte scrape failed; falling back to Playwright:", error?.message);
+  }
+
+  return scrapeAppointmentsByDateViaPlaywright({
+    appointmentDate,
+    officeAllyUsername,
+    officeAllyPassword,
+  });
 }
 
 module.exports = { scrapeAppointmentsByDate };
