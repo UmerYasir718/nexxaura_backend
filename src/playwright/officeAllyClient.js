@@ -107,11 +107,16 @@ function extractTextById(html, id) {
 
 function parsePatientAndInsuranceDetailsFromHtml(html) {
   const body = String(html || "");
+  const primaryPatientId = extractInputValueById(
+    body,
+    "ctl00_phFolderContent_ucPatient_PAEnrollment_hdnPAPatientID",
+  );
+  const fallbackPatientId = extractInputValueById(
+    body,
+    "ctl00_phFolderContent_ucPatient_hdnPatientID",
+  );
   const patientTab = {
-    patientId: extractInputValueById(
-      body,
-      "ctl00_phFolderContent_ucPatient_PAEnrollment_hdnPAPatientID",
-    ),
+    patientId: primaryPatientId || fallbackPatientId,
     firstName: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_FirstName"),
     middleName: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_MiddleName"),
     lastName: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_LastName"),
@@ -1120,14 +1125,26 @@ async function scrapeAppointmentsByDateViaZyte({
     const detailsKey = patientId || patientUrl;
     if (detailsByPatientId[detailsKey]) continue;
     try {
+      const patientTabUrl = withTab(patientUrl, "P");
+      const insuranceTabUrl = withTab(patientUrl, "I");
       const patientHtml = await requestZyteRenderedHtml({
-        url: patientUrl,
+        url: patientTabUrl,
         officeAllyUsername,
         officeAllyPassword,
       });
-      detailsByPatientId[detailsKey] = parsePatientAndInsuranceDetailsFromHtml(
-        patientHtml,
+      const insuranceHtml = await requestZyteRenderedHtml({
+        url: insuranceTabUrl,
+        officeAllyUsername,
+        officeAllyPassword,
+      });
+      const patientDetails = parsePatientAndInsuranceDetailsFromHtml(patientHtml);
+      const insuranceDetails = parsePatientAndInsuranceDetailsFromHtml(
+        insuranceHtml,
       );
+      detailsByPatientId[detailsKey] = {
+        patientTab: patientDetails.patientTab || {},
+        insuranceTab: insuranceDetails.insuranceTab || {},
+      };
     } catch (error) {
       detailsByPatientId[detailsKey] = {
         scrapeError: error?.message || "Failed to scrape Zyte patient details",
@@ -1139,7 +1156,16 @@ async function scrapeAppointmentsByDateViaZyte({
     const patientId = String(row["Patient ID"] || "").trim();
     const patientUrl = String(row.PatientUrl || "").trim();
     const detailsKey = patientId || patientUrl;
-    return { ...row, patientDetails: detailsByPatientId[detailsKey] || null };
+    const details = detailsByPatientId[detailsKey] || null;
+    if (!details) return { ...row, patientDetails: null };
+    const mergedPatientId =
+      String(row["Patient ID"] || "").trim() ||
+      String(details?.patientTab?.patientId || "").trim();
+    return {
+      ...row,
+      "Patient ID": mergedPatientId,
+      patientDetails: details,
+    };
   });
 }
 
