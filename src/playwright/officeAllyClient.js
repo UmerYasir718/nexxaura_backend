@@ -54,7 +54,7 @@ function buildPatientEditUrl(baseUrl, patientId, tab) {
 }
 
 function withTab(urlLike, tab) {
-  const u = new URL(urlLike);
+  const u = new URL(decodeHtmlEntities(urlLike));
   u.searchParams.set("Tab", tab);
   return u.toString();
 }
@@ -284,7 +284,7 @@ function parseAppointmentsFromDailyHtml(html, pageUrl) {
         patientCell,
       )?.[1] ||
       "";
-    const href = hrefMatch?.[1] || onclickHref;
+    const href = decodeHtmlEntities(hrefMatch?.[1] || onclickHref);
     if (!href) continue;
 
     let patientUrl = href;
@@ -1209,18 +1209,16 @@ async function scrapeAppointmentsByDateViaZyte({
 
   // eslint-disable-next-line no-console
   console.log(`[zyte] patient detail fetch queue size=${uniquePatients.length}`);
-  for (let i = 0; i < uniquePatients.length; i += 1) {
-    const item = uniquePatients[i];
+  const concurrency = 3;
+  const worker = async (item, index) => {
     const { detailsKey, patientUrl } = item;
     try {
       const insuranceTabUrl = withTab(patientUrl, "I");
-      // Keep Zyte detail calls lightweight: one request on insurance tab carries insurance fields,
-      // and daily row already provides core patient name/DOB fallback.
       const insuranceHtml = await requestZyteRenderedHtml({
         url: insuranceTabUrl,
         officeAllyUsername,
         officeAllyPassword,
-        postLoginWaitSeconds: 4,
+        postLoginWaitSeconds: 2,
       });
       const insuranceDetails = parsePatientAndInsuranceDetailsFromHtml(
         insuranceHtml,
@@ -1231,7 +1229,7 @@ async function scrapeAppointmentsByDateViaZyte({
       };
       // eslint-disable-next-line no-console
       console.log(
-        `[zyte] patient detail fetched ${i + 1}/${uniquePatients.length} key=${detailsKey}`,
+        `[zyte] patient detail fetched ${index + 1}/${uniquePatients.length} key=${detailsKey}`,
       );
     } catch (error) {
       detailsByPatientId[detailsKey] = {
@@ -1239,9 +1237,14 @@ async function scrapeAppointmentsByDateViaZyte({
       };
       // eslint-disable-next-line no-console
       console.warn(
-        `[zyte] patient detail failed ${i + 1}/${uniquePatients.length} key=${detailsKey} error=${error?.message || "unknown"}`,
+        `[zyte] patient detail failed ${index + 1}/${uniquePatients.length} key=${detailsKey} error=${error?.message || "unknown"}`,
       );
     }
+  };
+
+  for (let i = 0; i < uniquePatients.length; i += concurrency) {
+    const batch = uniquePatients.slice(i, i + concurrency);
+    await Promise.all(batch.map((item, offset) => worker(item, i + offset)));
   }
 
   return rows.map((row) => {
