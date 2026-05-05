@@ -115,11 +115,22 @@ function createLogger() {
 
 async function loadEligibilityScraper() {
   const rel = process.env.ELIGIBILITY_SCRAPER_PATH;
-  const absolute = rel
-    ? path.isAbsolute(rel)
-      ? rel
-      : path.join(process.cwd(), rel)
-    : path.join(__dirname, '..', '..', '..', 'scripts', 'availity', 'src', 'eligibilityScraper.js');
+  const candidates = [];
+  if (rel) {
+    candidates.push(path.isAbsolute(rel) ? rel : path.join(process.cwd(), rel));
+  }
+  candidates.push(
+    path.join(process.cwd(), 'scripts', 'availity', 'src', 'eligibilityScraper.js'),
+    path.join(process.cwd(), '..', 'availity', 'src', 'eligibilityScraper.js'),
+    path.join(__dirname, '..', '..', 'scripts', 'availity', 'src', 'eligibilityScraper.js'),
+    path.join(__dirname, '..', '..', '..', 'availity', 'src', 'eligibilityScraper.js'),
+  );
+  const absolute = candidates.find((p) => fs.existsSync(p));
+  if (!absolute) {
+    throw new Error(
+      `Eligibility scraper not found. Checked: ${candidates.join(', ')}`,
+    );
+  }
   return import(pathToFileURL(absolute).href);
 }
 
