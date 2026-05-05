@@ -623,7 +623,7 @@ async function scrapeAppointmentsByDateViaZyte({
 }) {
   if (!env.officeAlly.zyteEnabled) {
     throw new Error(
-      "Zyte scraping is disabled. Set OA_ZYTE_ENABLED=true to use scrapeAppointmentsByDateViaZyte.",
+      "Zyte scraping is disabled in runtime env. Set OA_ZYTE_ENABLED=true or provide ZYTE_API_KEY, then restart the Node process.",
     );
   }
   const dailyUrl = buildDailyViewUrl(env.officeAlly.baseUrl, appointmentDate);
