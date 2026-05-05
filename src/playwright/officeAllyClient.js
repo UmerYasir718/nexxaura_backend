@@ -1,4 +1,6 @@
 const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
 const { chromium } = require("playwright");
 const env = require("../config/env");
 
@@ -63,11 +65,11 @@ function stripTags(html) {
 
 function parseAppointmentsFromDailyHtml(html, pageUrl) {
   const rows = [];
-  const tbodyMatch = /<table[^>]*id=["']tblDailyApp["'][\s\S]*?<tbody[^>]*>([\s\S]*?)<\/tbody>/i.exec(
+  const tableMatch = /<table[^>]*id=["']tblDailyApp["'][\s\S]*?<\/table>/i.exec(
     String(html || ""),
   );
-  if (!tbodyMatch) return rows;
-  const rowBlocks = tbodyMatch[1].match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  if (!tableMatch) return rows;
+  const rowBlocks = tableMatch[0].match(/<tr[\s\S]*?<\/tr>/gi) || [];
   for (const tr of rowBlocks) {
     const cells = tr.match(/<td[\s\S]*?<\/td>/gi) || [];
     if (cells.length < 10) continue;
@@ -104,6 +106,49 @@ function parseAppointmentsFromDailyHtml(html, pageUrl) {
   return rows;
 }
 
+function detectZyteHtmlState(html) {
+  const body = String(html || "").toLowerCase();
+  if (!body.trim()) return "empty_html";
+  if (body.includes("tbldailyapp")) return "appointments_table_present";
+  if (
+    body.includes("input name=\"username\"") ||
+    body.includes("id=\"username\"") ||
+    body.includes("input name='username'")
+  ) {
+    return "login_page_returned";
+  }
+  if (body.includes("captcha") || body.includes("human visitor")) {
+    return "captcha_or_bot_challenge";
+  }
+  return "unknown_page_shape";
+}
+
+function artifactDir() {
+  return path.resolve(process.cwd(), "debug");
+}
+
+async function writeZyteArtifacts({ label, responseData }) {
+  const dir = artifactDir();
+  await fs.promises.mkdir(dir, { recursive: true });
+  const safeLabel = String(label || "variant").replace(/[^a-z0-9_-]/gi, "_");
+
+  const html = responseData?.browserHtml;
+  if (html) {
+    const htmlPath = path.join(dir, `zyte-${safeLabel}.html`);
+    await fs.promises.writeFile(htmlPath, String(html), "utf8");
+    // eslint-disable-next-line no-console
+    console.log(`[zyte] html snapshot saved: ${htmlPath}`);
+  }
+
+  const screenshotB64 = responseData?.screenshot;
+  if (screenshotB64) {
+    const pngPath = path.join(dir, `zyte-${safeLabel}.png`);
+    await fs.promises.writeFile(pngPath, Buffer.from(screenshotB64, "base64"));
+    // eslint-disable-next-line no-console
+    console.log(`[zyte] screenshot saved: ${pngPath}`);
+  }
+}
+
 async function requestZyteRenderedHtml({
   url,
   officeAllyUsername,
@@ -126,6 +171,7 @@ async function requestZyteRenderedHtml({
       payload: {
         url: baseUrl,
         browserHtml: true,
+        screenshot: true,
         actions: [
           { action: "click", selector: css("#w-dropdown-toggle-4") },
           { action: "click", selector: css("#nav_practice") },
@@ -149,6 +195,7 @@ async function requestZyteRenderedHtml({
       payload: {
         url: baseUrl,
         browserHtml: true,
+        screenshot: true,
         actions: [
           { action: "click", selector: css("#w-dropdown-toggle-4") },
           { action: "click", selector: css("#nav_practice") },
@@ -172,6 +219,7 @@ async function requestZyteRenderedHtml({
       payload: {
         url: targetUrl,
         browserHtml: true,
+        screenshot: true,
         actions: [
           { action: "click", selector: css("#w-dropdown-toggle-4") },
           { action: "click", selector: css("#nav_practice") },
@@ -194,6 +242,7 @@ async function requestZyteRenderedHtml({
       payload: {
         url: baseUrl,
         browserHtml: true,
+        screenshot: true,
         actions: [
           { action: "click", selector: css("#w-dropdown-toggle-4") },
           { action: "click", selector: css("#nav_practice") },
@@ -212,17 +261,54 @@ async function requestZyteRenderedHtml({
         ],
       },
     },
+    {
+      label: "type-text-evaluate-nav",
+      payload: {
+        url: baseUrl,
+        browserHtml: true,
+        screenshot: true,
+        actions: [
+          { action: "click", selector: css("#w-dropdown-toggle-4") },
+          { action: "click", selector: css("#nav_practice") },
+          {
+            action: "type",
+            selector: css("input[name='username']"),
+            text: officeAllyUsername,
+          },
+          {
+            action: "type",
+            selector: css("input[name='password']"),
+            text: officeAllyPassword,
+          },
+          { action: "click", selector: css("button[type='submit']") },
+          { action: "evaluate", source: `window.location.href = ${JSON.stringify(targetUrl)};` },
+          { action: "waitForTimeout", timeout: 2.0 },
+        ],
+      },
+    },
   ];
 
   let lastErr = null;
   for (const variant of payloadVariants) {
     try {
+      // eslint-disable-next-line no-console
+      console.log(`[zyte] trying variant=${variant.label} login_flow=start`);
       const response = await axios.post(endpoint, variant.payload, {
         headers: commonHeaders,
         auth: { username: apiKey },
         timeout: 120000,
       });
+      await writeZyteArtifacts({
+        label: variant.label,
+        responseData: response?.data || {},
+      }).catch(() => {});
       const html = response?.data?.browserHtml || null;
+      const state = detectZyteHtmlState(html || "");
+      const loginSuccess = state === "appointments_table_present";
+      // eslint-disable-next-line no-console
+      console.log(
+        `[zyte] variant=${variant.label} login_flow=done html_state=${state} login_success=${loginSuccess}`,
+      );
       if (html) return html;
     } catch (error) {
       lastErr = error;
@@ -230,6 +316,10 @@ async function requestZyteRenderedHtml({
       console.warn(
         `[zyte] variant failed (${variant.label}) status=${
           error?.response?.status || "n/a"
+        } detail=${
+          typeof error?.response?.data === "string"
+            ? error.response.data
+            : JSON.stringify(error?.response?.data || {})
         }`,
       );
     }
@@ -739,8 +829,9 @@ async function scrapeAppointmentsByDateViaZyte({
   }
   const rows = parseAppointmentsFromDailyHtml(html, dailyUrl);
   if (!rows.length) {
+    const htmlState = detectZyteHtmlState(html);
     throw new Error(
-      "Zyte returned zero appointment rows for the requested date.",
+      `Zyte returned zero appointment rows for the requested date. html_state=${htmlState}`,
     );
   }
   return rows.map((row) => ({ ...row, patientDetails: null }));
