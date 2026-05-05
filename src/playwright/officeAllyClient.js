@@ -208,7 +208,7 @@ async function requestZyteRenderedHtml({
             text: officeAllyPassword,
           },
           { action: "click", selector: css("button[type='submit']") },
-          { action: "waitForTimeout", timeout: 2500 },
+          { action: "waitForTimeout", timeout: 2.5 },
         ],
       },
     },
