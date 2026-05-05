@@ -14,6 +14,15 @@ function parseDateParts(appointmentDate) {
   return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
 }
 
+function calendarTitleFromDate(appointmentDate) {
+  const { year, month, day } = parseDateParts(appointmentDate);
+  const monthName = new Date(Date.UTC(year, month - 1, day)).toLocaleString("en-US", {
+    month: "long",
+    timeZone: "UTC",
+  });
+  return `${monthName} ${day}`;
+}
+
 function buildDailyViewUrl(baseUrl, appointmentDate) {
   const { year, month, day } = parseDateParts(appointmentDate);
   const root = new URL(baseUrl);
@@ -356,6 +365,7 @@ async function requestZyteRenderedHtml({
   officeAllyUsername,
   officeAllyPassword,
   postLoginWaitSeconds = 12,
+  calendarDateTitle = "",
 }) {
   const apiKey = String(env.officeAlly.zyteApiKey || "").trim();
   if (!apiKey) return null;
@@ -364,11 +374,64 @@ async function requestZyteRenderedHtml({
   const commonHeaders = { "Content-Type": "application/json" };
   const targetUrl = String(url || "").trim();
   const baseUrl = String(env.officeAlly.baseUrl || "").trim();
+  const appointmentsBaseUrl = new URL(
+    "/pm/Appointments/ViewAppointments.aspx?Tab=A&View=d",
+    baseUrl,
+  ).toString();
   const css = (value) => ({ type: "css", value });
 
   // Zyte action grammar can differ by account/version.
   // Try a few compatible payload shapes before failing hard.
   const payloadVariants = [
+    {
+      label: "auth0-evaluate-calendar-click",
+      payload: {
+        url: baseUrl,
+        browserHtml: true,
+        screenshot: true,
+        actions: [
+          { action: "waitForTimeout", timeout: 1.0 },
+          {
+            action: "evaluate",
+            source: `
+              (function () {
+                const u = document.querySelector("#username, input[name='username']");
+                const p = document.querySelector("#password, input[name='password']");
+                const f = document.querySelector("form[data-form-primary='true'], form");
+                if (!u || !p || !f) return;
+                u.focus();
+                u.value = ${JSON.stringify(officeAllyUsername)};
+                u.dispatchEvent(new Event("input", { bubbles: true }));
+                u.dispatchEvent(new Event("change", { bubbles: true }));
+                p.focus();
+                p.value = ${JSON.stringify(officeAllyPassword)};
+                p.dispatchEvent(new Event("input", { bubbles: true }));
+                p.dispatchEvent(new Event("change", { bubbles: true }));
+                f.submit();
+              })();
+            `,
+          },
+          { action: "waitForTimeout", timeout: postLoginWaitSeconds },
+          { action: "evaluate", source: `window.location.href = ${JSON.stringify(appointmentsBaseUrl)};` },
+          { action: "waitForTimeout", timeout: 4.0 },
+          ...(calendarDateTitle
+            ? [
+                {
+                  action: "click",
+                  selector: css(
+                    `#ctl00_phFolderContent_Appointments_Calendar1 a[title='${String(
+                      calendarDateTitle,
+                    ).replace(/'/g, "\\'")}']`,
+                  ),
+                },
+                { action: "waitForTimeout", timeout: 4.0 },
+              ]
+            : []),
+          { action: "evaluate", source: `window.location.href = ${JSON.stringify(targetUrl)};` },
+          { action: "waitForTimeout", timeout: 3.0 },
+        ],
+      },
+    },
     {
       label: "auth0-evaluate-submit",
       payload: {
@@ -1100,17 +1163,31 @@ async function scrapeAppointmentsByDateViaZyte({
     );
   }
   const dailyUrl = buildDailyViewUrl(env.officeAlly.baseUrl, appointmentDate);
-  const html = await requestZyteRenderedHtml({
+  let html = await requestZyteRenderedHtml({
     url: dailyUrl,
     officeAllyUsername,
     officeAllyPassword,
+    calendarDateTitle: calendarTitleFromDate(appointmentDate),
   });
   if (!html) {
     throw new Error(
       "Zyte did not return rendered HTML. Check ZYTE_API_KEY and ZYTE_API_URL.",
     );
   }
-  const rows = parseAppointmentsFromDailyHtml(html, dailyUrl);
+  let rows = parseAppointmentsFromDailyHtml(html, dailyUrl);
+  if (!rows.length) {
+    const fallbackHtml = await requestZyteRenderedHtml({
+      url: dailyUrl,
+      officeAllyUsername,
+      officeAllyPassword,
+      postLoginWaitSeconds: 6,
+      calendarDateTitle: calendarTitleFromDate(appointmentDate),
+    });
+    if (fallbackHtml) {
+      html = fallbackHtml;
+      rows = parseAppointmentsFromDailyHtml(html, dailyUrl);
+    }
+  }
   if (!rows.length) {
     const htmlState = detectZyteHtmlState(html);
     throw new Error(
