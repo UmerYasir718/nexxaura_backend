@@ -167,6 +167,40 @@ async function requestZyteRenderedHtml({
   // Try a few compatible payload shapes before failing hard.
   const payloadVariants = [
     {
+      label: "auth0-evaluate-submit",
+      payload: {
+        url: baseUrl,
+        browserHtml: true,
+        screenshot: true,
+        actions: [
+          { action: "waitForTimeout", timeout: 1.0 },
+          {
+            action: "evaluate",
+            source: `
+              (function () {
+                const u = document.querySelector("#username, input[name='username']");
+                const p = document.querySelector("#password, input[name='password']");
+                const f = document.querySelector("form[data-form-primary='true'], form");
+                if (!u || !p || !f) return;
+                u.focus();
+                u.value = ${JSON.stringify(officeAllyUsername)};
+                u.dispatchEvent(new Event("input", { bubbles: true }));
+                u.dispatchEvent(new Event("change", { bubbles: true }));
+                p.focus();
+                p.value = ${JSON.stringify(officeAllyPassword)};
+                p.dispatchEvent(new Event("input", { bubbles: true }));
+                p.dispatchEvent(new Event("change", { bubbles: true }));
+                f.submit();
+              })();
+            `,
+          },
+          { action: "waitForTimeout", timeout: 4.0 },
+          { action: "evaluate", source: `window.location.href = ${JSON.stringify(targetUrl)};` },
+          { action: "waitForTimeout", timeout: 3.0 },
+        ],
+      },
+    },
+    {
       label: "type+goto",
       payload: {
         url: baseUrl,
