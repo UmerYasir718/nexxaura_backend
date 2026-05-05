@@ -112,37 +112,116 @@ async function requestZyteRenderedHtml({
   const apiKey = String(env.officeAlly.zyteApiKey || "").trim();
   if (!apiKey) return null;
 
-  const auth = Buffer.from(`${apiKey}:`).toString("base64");
   const endpoint = String(env.officeAlly.zyteApiUrl || "https://api.zyte.com/v1/extract");
-  const payload = {
-    url: String(env.officeAlly.baseUrl || "").trim(),
-    browserHtml: true,
-    actions: [
-      { action: "click", selector: "#w-dropdown-toggle-4" },
-      { action: "click", selector: "#nav_practice" },
-      {
-        action: "type",
-        selector: "input[name='username'], #username",
-        value: officeAllyUsername,
-      },
-      {
-        action: "type",
-        selector: "input[name='password'], #password",
-        value: officeAllyPassword,
-      },
-      { action: "click", selector: "button[type='submit'], input[type='submit']" },
-      { action: "goto", url },
-    ],
-  };
+  const commonHeaders = { "Content-Type": "application/json" };
+  const targetUrl = String(url || "").trim();
+  const baseUrl = String(env.officeAlly.baseUrl || "").trim();
 
-  const response = await axios.post(endpoint, payload, {
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/json",
+  // Zyte action grammar can differ by account/version.
+  // Try a few compatible payload shapes before failing hard.
+  const payloadVariants = [
+    {
+      label: "type+goto",
+      payload: {
+        url: baseUrl,
+        browserHtml: true,
+        followRedirect: true,
+        actions: [
+          { action: "click", selector: "#w-dropdown-toggle-4" },
+          { action: "click", selector: "#nav_practice" },
+          {
+            action: "type",
+            selector: "input[name='username']",
+            value: officeAllyUsername,
+          },
+          {
+            action: "type",
+            selector: "input[name='password']",
+            value: officeAllyPassword,
+          },
+          { action: "click", selector: "button[type='submit']" },
+          { action: "goto", url: targetUrl },
+        ],
+      },
     },
-    timeout: 120000,
-  });
-  return response?.data?.browserHtml || null;
+    {
+      label: "fill+goto",
+      payload: {
+        url: baseUrl,
+        browserHtml: true,
+        followRedirect: true,
+        actions: [
+          { action: "click", selector: "#w-dropdown-toggle-4" },
+          { action: "click", selector: "#nav_practice" },
+          {
+            action: "fill",
+            selector: "input[name='username']",
+            value: officeAllyUsername,
+          },
+          {
+            action: "fill",
+            selector: "input[name='password']",
+            value: officeAllyPassword,
+          },
+          { action: "click", selector: "button[type='submit']" },
+          { action: "goto", url: targetUrl },
+        ],
+      },
+    },
+    {
+      label: "type-direct-url",
+      payload: {
+        url: targetUrl,
+        browserHtml: true,
+        followRedirect: true,
+        actions: [
+          { action: "click", selector: "#w-dropdown-toggle-4" },
+          { action: "click", selector: "#nav_practice" },
+          {
+            action: "type",
+            selector: "input[name='username']",
+            value: officeAllyUsername,
+          },
+          {
+            action: "type",
+            selector: "input[name='password']",
+            value: officeAllyPassword,
+          },
+          { action: "click", selector: "button[type='submit']" },
+        ],
+      },
+    },
+  ];
+
+  let lastErr = null;
+  for (const variant of payloadVariants) {
+    try {
+      const response = await axios.post(endpoint, variant.payload, {
+        headers: commonHeaders,
+        auth: { username: apiKey },
+        timeout: 120000,
+      });
+      const html = response?.data?.browserHtml || null;
+      if (html) return html;
+    } catch (error) {
+      lastErr = error;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[zyte] variant failed (${variant.label}) status=${
+          error?.response?.status || "n/a"
+        }`,
+      );
+    }
+  }
+
+  const status = lastErr?.response?.status;
+  const detail =
+    typeof lastErr?.response?.data === "string"
+      ? lastErr.response.data
+      : JSON.stringify(lastErr?.response?.data || {});
+  throw new Error(
+    `Zyte extract failed after retries. status=${status || "n/a"} detail=${detail}`,
+  );
 }
 
 async function scrapePatientAndInsuranceDetails(page) {
