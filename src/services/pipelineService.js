@@ -690,8 +690,24 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
     ]);
 
     const queue = await listPrimaryInsuranceForUser(userId, avConfig.availity.maxPatientsPerRun, appointmentDate, ids);
+    const diag = await getEligibilityQueueDiagnostics(userId, appointmentDate).catch(() => null);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[eligibility] queue summary userId=${userId} date=${appointmentDate} limit=${avConfig.availity.maxPatientsPerRun} queueSize=${queue.length} diag=${
+        diag ? JSON.stringify(diag) : 'unavailable'
+      } sample=${JSON.stringify(
+        queue.slice(0, 10).map((r) => ({
+          patientId: r.patient_id,
+          pmPatientId: r.pm_patient_id,
+          insuranceId: r.patient_insurance_id,
+          rank: r.coverage_rank,
+          hasDob: Boolean(r.date_of_birth),
+          hasMemberId: Boolean(String(r.member_id || '').trim()),
+          hasPayerName: Boolean(String(r.payer_name || '').trim()),
+        })),
+      )}`,
+    );
     if (!queue.length) {
-      const diag = await getEligibilityQueueDiagnostics(userId, appointmentDate).catch(() => null);
       // eslint-disable-next-line no-console
       console.warn(
         `[eligibility] empty queue userId=${userId} date=${appointmentDate} limit=${avConfig.availity.maxPatientsPerRun} diag=${
