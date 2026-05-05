@@ -4,7 +4,8 @@ const otpController = require('../controllers/otpController');
 const { requireAuth } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
-router.post('/date-sync', requireAuth, syncController.createDateSync);
+router.post('/appointment-sync', requireAuth, syncController.createDateSync);
+router.post('/date-sync', requireAuth, syncController.createDateSync); // backward-compatible alias
 router.post('/eligibility-verification', requireAuth, syncController.createEligibilityVerification);
 router.post('/eligibilityandinsurance', requireAuth, syncController.createEligibilityAndInsurance);
 router.post('/otp', requireAuth, otpController.submitOtp);

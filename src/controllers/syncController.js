@@ -6,15 +6,11 @@ async function createDateSync(req, res, next) {
     const { appointmentDate } = req.body;
     if (!appointmentDate) throw new HttpError(400, 'appointmentDate is required (YYYY-MM-DD)');
 
-    // eslint-disable-next-line no-console
-    console.log(`[date-sync] controller start userId=${req.user.id} date=${appointmentDate}`);
-    const result = await syncService.runDateSyncOnly({
+    const result = await syncService.requestDateSyncOnly({
       userId: req.user.id,
       appointmentDate,
     });
     if (result.alreadyProcessing) {
-      // eslint-disable-next-line no-console
-      console.log(`[date-sync] controller response 409 syncId=${result.syncRequestId}`);
       return res.status(409).json({
         message: 'A sync is already running for this user',
         syncRequestId: result.syncRequestId,
@@ -22,12 +18,12 @@ async function createDateSync(req, res, next) {
         detail: result.message,
       });
     }
-    // eslint-disable-next-line no-console
-    console.log('[date-sync] controller response 200 sent');
-    return res.status(200).json(result);
+    return res.status(202).json({
+      status: 'good',
+      message: result.message || 'Date sync started',
+      syncRequestId: result.syncRequestId,
+    });
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('[date-sync] controller failed', error);
     return next(error);
   }
 }
@@ -36,7 +32,7 @@ async function createEligibilityVerification(req, res, next) {
   try {
     const { appointmentDate } = req.body;
     if (!appointmentDate) throw new HttpError(400, 'appointmentDate is required (YYYY-MM-DD)');
-    const result = await syncService.runEligibilityVerification({
+    const result = await syncService.requestEligibilityVerification({
       userId: req.user.id,
       appointmentDate,
     });
@@ -48,7 +44,11 @@ async function createEligibilityVerification(req, res, next) {
         detail: result.message,
       });
     }
-    return res.status(200).json(result);
+    return res.status(202).json({
+      status: 'good',
+      message: result.message || 'Eligibility verification started',
+      syncRequestId: result.syncRequestId,
+    });
   } catch (error) {
     return next(error);
   }

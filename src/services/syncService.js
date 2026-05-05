@@ -332,6 +332,38 @@ async function runDateSyncOnly({
   }
 }
 
+async function requestDateSyncOnly({ userId, appointmentDate }) {
+  const date = normalizeDateOrThrow(appointmentDate);
+  const officeAllyCreds = await fetchOfficeAllyCreds(userId);
+  const created = await createSyncRun({
+    userId,
+    appointmentDate: date,
+    currentStage: "office_ally",
+    message: "Office Ally endpoint started",
+  });
+  if (created.alreadyProcessing) {
+    return created;
+  }
+  const syncId = created.syncRequestId;
+  setImmediate(() => {
+    runOfficeAllyStage({
+      userId,
+      appointmentDate: date,
+      syncId,
+      officeAllyCreds,
+    })
+      .then(({ savedAppointments }) => {
+        markSyncSuccessBestEffort(syncId, savedAppointments);
+      })
+      // eslint-disable-next-line no-console
+      .catch((err) => {
+        console.error("[date-sync office ally failed]", err);
+        return markSyncFailed(syncId, err);
+      });
+  });
+  return { syncRequestId: syncId, message: "Date sync started" };
+}
+
 async function runEligibilityVerification({ userId, appointmentDate }) {
   const date = normalizeDateOrThrow(appointmentDate);
   const availityCreds = await fetchAvailityCreds(userId);
@@ -361,6 +393,32 @@ async function runEligibilityVerification({ userId, appointmentDate }) {
     await markSyncFailed(syncId, e);
     throw e;
   }
+}
+
+async function requestEligibilityVerification({ userId, appointmentDate }) {
+  const date = normalizeDateOrThrow(appointmentDate);
+  const availityCreds = await fetchAvailityCreds(userId);
+  const created = await createSyncRun({
+    userId,
+    appointmentDate: date,
+    currentStage: "availity",
+    message: "Availity eligibility endpoint started",
+  });
+  if (created.alreadyProcessing) {
+    return created;
+  }
+  const syncId = created.syncRequestId;
+  setImmediate(() => {
+    runAvailityStage({
+      userId,
+      syncId,
+      availityCreds,
+      appointmentDate: date,
+      officeAllySavedAppointments: null,
+    })
+      .catch((err) => markSyncFailed(syncId, err));
+  });
+  return { syncRequestId: syncId, message: "Eligibility verification started" };
 }
 
 async function runEligibilityAndInsurance({ userId, appointmentDate }) {
@@ -416,7 +474,9 @@ async function getRunsByUser(userId) {
 
 module.exports = {
   requestDateSync,
+  requestDateSyncOnly,
   runDateSyncOnly,
+  requestEligibilityVerification,
   runEligibilityVerification,
   runEligibilityAndInsurance,
   getRunsByUser,
