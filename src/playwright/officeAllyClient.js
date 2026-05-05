@@ -126,7 +126,6 @@ async function requestZyteRenderedHtml({
       payload: {
         url: baseUrl,
         browserHtml: true,
-        followRedirect: true,
         actions: [
           { action: "click", selector: css("#w-dropdown-toggle-4") },
           { action: "click", selector: css("#nav_practice") },
@@ -150,7 +149,6 @@ async function requestZyteRenderedHtml({
       payload: {
         url: baseUrl,
         browserHtml: true,
-        followRedirect: true,
         actions: [
           { action: "click", selector: css("#w-dropdown-toggle-4") },
           { action: "click", selector: css("#nav_practice") },
@@ -174,7 +172,6 @@ async function requestZyteRenderedHtml({
       payload: {
         url: targetUrl,
         browserHtml: true,
-        followRedirect: true,
         actions: [
           { action: "click", selector: css("#w-dropdown-toggle-4") },
           { action: "click", selector: css("#nav_practice") },
@@ -189,6 +186,29 @@ async function requestZyteRenderedHtml({
             value: officeAllyPassword,
           },
           { action: "click", selector: css("button[type='submit']") },
+        ],
+      },
+    },
+    {
+      label: "type-text-no-goto",
+      payload: {
+        url: baseUrl,
+        browserHtml: true,
+        actions: [
+          { action: "click", selector: css("#w-dropdown-toggle-4") },
+          { action: "click", selector: css("#nav_practice") },
+          {
+            action: "type",
+            selector: css("input[name='username']"),
+            text: officeAllyUsername,
+          },
+          {
+            action: "type",
+            selector: css("input[name='password']"),
+            text: officeAllyPassword,
+          },
+          { action: "click", selector: css("button[type='submit']") },
+          { action: "waitForTimeout", timeout: 2500 },
         ],
       },
     },
