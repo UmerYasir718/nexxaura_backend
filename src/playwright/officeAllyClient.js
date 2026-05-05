@@ -194,9 +194,10 @@ async function requestZyteRenderedHtml({
               })();
             `,
           },
-          { action: "waitForTimeout", timeout: 4.0 },
+          // Office Ally/Auth0 can take time to finish redirect/session bootstrap.
+          { action: "waitForTimeout", timeout: 12.0 },
           { action: "evaluate", source: `window.location.href = ${JSON.stringify(targetUrl)};` },
-          { action: "waitForTimeout", timeout: 3.0 },
+          { action: "waitForTimeout", timeout: 12.0 },
         ],
       },
     },
