@@ -63,6 +63,194 @@ function stripTags(html) {
     .trim();
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .trim();
+}
+
+function extractInputValueById(html, id) {
+  const re = new RegExp(
+    `<[^>]*(?:id|name)=["'][^"']*${escapeRegExp(id)}[^"']*["'][^>]*\\svalue=["']([^"']*)["'][^>]*>`,
+    "i",
+  );
+  const m = re.exec(String(html || ""));
+  return decodeHtmlEntities(m?.[1] || "");
+}
+
+function extractSelectedTextById(html, id) {
+  const re = new RegExp(
+    `<select[^>]*id=["']${escapeRegExp(id)}["'][\\s\\S]*?<option[^>]*selected[^>]*>([\\s\\S]*?)<\\/option>`,
+    "i",
+  );
+  const m = re.exec(String(html || ""));
+  return stripTags(m?.[1] || "");
+}
+
+function extractTextById(html, id) {
+  const re = new RegExp(
+    `<[^>]*id=["']${escapeRegExp(id)}["'][^>]*>([\\s\\S]*?)<\\/[^>]+>`,
+    "i",
+  );
+  const m = re.exec(String(html || ""));
+  return stripTags(m?.[1] || "");
+}
+
+function parsePatientAndInsuranceDetailsFromHtml(html) {
+  const body = String(html || "");
+  const patientTab = {
+    patientId: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_PAEnrollment_hdnPAPatientID",
+    ),
+    firstName: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_FirstName"),
+    middleName: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_MiddleName"),
+    lastName: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_LastName"),
+    dob: [
+      extractInputValueById(body, "ctl00_phFolderContent_ucPatient_DOB_Month"),
+      extractInputValueById(body, "ctl00_phFolderContent_ucPatient_DOB_Day"),
+      extractInputValueById(body, "ctl00_phFolderContent_ucPatient_DOB_Year"),
+    ]
+      .filter(Boolean)
+      .join("/"),
+    sex: extractSelectedTextById(body, "ctl00_phFolderContent_ucPatient_lstGender"),
+    maritalStatus: extractSelectedTextById(
+      body,
+      "ctl00_phFolderContent_ucPatient_lstMaritalStatus",
+    ),
+    addressLine1: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_AddressLine1",
+    ),
+    addressLine2: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_AddressLine2",
+    ),
+    city: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_City"),
+    state: extractSelectedTextById(body, "ctl00_phFolderContent_ucPatient_lstState"),
+    zip: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_Zip"),
+    email: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_Email"),
+  };
+
+  const primaryInsurance = {
+    insuranceType: extractTextById(
+      body,
+      "lblMultiSelectddlPatientInsuranceType",
+    ),
+    insuranceCompanyId: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_InsuranceID",
+    ),
+    insuranceName: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_InsuranceName",
+    ),
+    insuredId: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_InsuredID"),
+    insuredLastName: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_InsuredLastName",
+    ),
+    insuredFirstName: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_InsuredFirstName",
+    ),
+    relationshipToInsured: extractSelectedTextById(
+      body,
+      "ctl00_phFolderContent_ucPatient_lstRelationshipToInsuredID",
+    ),
+    subscriberId: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_InsuranceSubscriberID",
+    ),
+    groupNo: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_InsuranceGroupNo"),
+    planName: extractInputValueById(body, "ctl00_phFolderContent_ucPatient_InsurancePlanName"),
+  };
+
+  const secondaryInsurance = {
+    insuranceType: extractTextById(
+      body,
+      "lblMultiSelectddlPatientInsuranceType2",
+    ),
+    insuranceCompanyId: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_SecondaryInsuranceID",
+    ),
+    insuranceName: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_SecondaryInsuranceName",
+    ),
+    insuredId: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_SecondaryInsuredID",
+    ),
+    relationshipToInsured: extractSelectedTextById(
+      body,
+      "ctl00_phFolderContent_ucPatient_lstRelationshipToSecondaryInsuredID",
+    ),
+    subscriberId: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_SecondaryInsuranceSubscriberID",
+    ),
+    groupNo: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_SecondaryInsuranceGroupNo",
+    ),
+    planName: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_SecondaryInsurancePlanName",
+    ),
+  };
+
+  const thirdInsurance = {
+    insuranceType: extractTextById(
+      body,
+      "lblMultiSelectddlPatientInsuranceType3",
+    ),
+    insuranceCompanyId: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_ThirdInsuranceID",
+    ),
+    insuranceName: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_ThirdInsuranceName",
+    ),
+    insuredId: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_ThirdInsuredID",
+    ),
+    relationshipToInsured: extractSelectedTextById(
+      body,
+      "ctl00_phFolderContent_ucPatient_lstRelationshipToThirdInsuredID",
+    ),
+    subscriberId: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_ThirdInsuranceSubscriberID",
+    ),
+    groupNo: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_ThirdInsuranceGroupNo",
+    ),
+    planName: extractInputValueById(
+      body,
+      "ctl00_phFolderContent_ucPatient_ThirdInsurancePlanName",
+    ),
+  };
+
+  return {
+    patientTab,
+    insuranceTab: { primaryInsurance, secondaryInsurance, thirdInsurance },
+  };
+}
+
 function parseAppointmentsFromDailyHtml(html, pageUrl) {
   const rows = [];
   const tableMatch = /<table[^>]*id=["']tblDailyApp["'][\s\S]*?<\/table>/i.exec(
@@ -77,14 +265,23 @@ function parseAppointmentsFromDailyHtml(html, pageUrl) {
     const patientText = stripTags(patientCell);
     if (!patientText) continue;
     const hrefMatch = /<a[^>]*href=["']([^"']+)["']/i.exec(patientCell);
-    const href = hrefMatch?.[1] || "";
+    const onclickHref =
+      /(?:window\.location(?:\.href)?|location(?:\.href)?)\s*=\s*["']([^"']+)["']/i.exec(
+        patientCell,
+      )?.[1] ||
+      "";
+    const href = hrefMatch?.[1] || onclickHref;
     if (!href) continue;
 
     let patientUrl = href;
     if (!/^https?:\/\//i.test(patientUrl)) {
       patientUrl = new URL(patientUrl, pageUrl).toString();
     }
-    const patientId = /[?&]PID=(\d+)/i.exec(patientUrl)?.[1] || "";
+    const patientId =
+      /[?&](?:PID|PatientID|InsuredID|ID)=(\d+)/i.exec(patientUrl)?.[1] ||
+      /EditPatient\((\d+)/i.exec(patientCell)?.[1] ||
+      /EditPatient\((\d+)/i.exec(tr)?.[1] ||
+      "";
     const [lastName, firstName] = patientText.split(",").map((x) => stripTags(x));
     const apptIcon = /<img[^>]*onclick=["'][^"']*EditAppointment\((\d+)/i.exec(tr);
 
@@ -914,7 +1111,36 @@ async function scrapeAppointmentsByDateViaZyte({
       `Zyte returned zero appointment rows for the requested date. html_state=${htmlState}`,
     );
   }
-  return rows.map((row) => ({ ...row, patientDetails: null }));
+
+  const detailsByPatientId = {};
+  for (const row of rows) {
+    const patientId = String(row["Patient ID"] || "").trim();
+    const patientUrl = String(row.PatientUrl || "").trim();
+    if (!patientUrl) continue;
+    const detailsKey = patientId || patientUrl;
+    if (detailsByPatientId[detailsKey]) continue;
+    try {
+      const patientHtml = await requestZyteRenderedHtml({
+        url: patientUrl,
+        officeAllyUsername,
+        officeAllyPassword,
+      });
+      detailsByPatientId[detailsKey] = parsePatientAndInsuranceDetailsFromHtml(
+        patientHtml,
+      );
+    } catch (error) {
+      detailsByPatientId[detailsKey] = {
+        scrapeError: error?.message || "Failed to scrape Zyte patient details",
+      };
+    }
+  }
+
+  return rows.map((row) => {
+    const patientId = String(row["Patient ID"] || "").trim();
+    const patientUrl = String(row.PatientUrl || "").trim();
+    const detailsKey = patientId || patientUrl;
+    return { ...row, patientDetails: detailsByPatientId[detailsKey] || null };
+  });
 }
 
 async function scrapeAppointmentsByDate({

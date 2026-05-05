@@ -390,12 +390,14 @@ async function bulkPersistOfficeAllyScrape(p) {
   let missingPmPatientIdCount = 0;
   for (let i = 0; i < n; i += 1) {
     const raw = rawAppointments[i];
-    const extractedPmPatientId =
-      raw['Patient ID'] || pickField(raw, /patient\s*id|account|acct|mrn|chart/i);
-    const pmPatientId = String(extractedPmPatientId || buildSyntheticPatientKey(raw, i));
-    if (!extractedPmPatientId) missingPmPatientIdCount += 1;
     const details = raw.patientDetails || {};
     const pTab = details.patientTab || {};
+    const extractedPmPatientId =
+      raw['Patient ID'] ||
+      pTab.patientId ||
+      pickField(raw, /patient\s*id|account|acct|mrn|chart/i);
+    const pmPatientId = String(extractedPmPatientId || buildSyntheticPatientKey(raw, i));
+    if (!extractedPmPatientId) missingPmPatientIdCount += 1;
     const firstName = pTab.firstName || pickField(raw, /first\s*name/i);
     const lastName = pTab.lastName || pickField(raw, /last\s*name/i);
     const dobIso = toIsoDate(pTab.dob || raw['Date Of Birth'] || pickField(raw, /date\s*of\s*birth|dob/i));
