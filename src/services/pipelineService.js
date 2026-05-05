@@ -203,6 +203,69 @@ async function listPrimaryInsuranceForUser(userId, limit, appointmentDate = null
   return rows;
 }
 
+async function getEligibilityQueueDiagnostics(userId, appointmentDate) {
+  if (!appointmentDate) {
+    return {
+      appointmentDate: null,
+      appointmentsOnDate: null,
+      patientsOnDate: null,
+      patientsWithDob: null,
+      patientsWithPrimaryInsurance: null,
+      patientsWithMemberId: null,
+      patientsWithPayerName: null,
+      fullyEligiblePatients: null,
+    };
+  }
+  const { rows } = await db.query(
+    `WITH appt_patients AS (
+       SELECT DISTINCT p.id AS patient_id
+         FROM appointments a
+         INNER JOIN patients p ON p.id = a.patient_id
+        WHERE a.user_id = $1
+          AND a.appointment_date = $2::date
+          AND p.user_id = $1
+     ),
+     base AS (
+       SELECT
+         ap.patient_id,
+         p.date_of_birth,
+         pi.id AS primary_insurance_id,
+         NULLIF(trim(pi.member_id), '') AS member_id,
+         NULLIF(trim(pi.payer_name), '') AS payer_name
+       FROM appt_patients ap
+       INNER JOIN patients p ON p.id = ap.patient_id
+       LEFT JOIN patient_insurance pi
+         ON pi.patient_id = ap.patient_id AND pi.coverage_rank = 1
+     )
+     SELECT
+       (SELECT COUNT(*) FROM appointments a WHERE a.user_id = $1 AND a.appointment_date = $2::date) AS appointments_on_date,
+       (SELECT COUNT(*) FROM appt_patients) AS patients_on_date,
+       COUNT(*) FILTER (WHERE date_of_birth IS NOT NULL) AS patients_with_dob,
+       COUNT(*) FILTER (WHERE primary_insurance_id IS NOT NULL) AS patients_with_primary_insurance,
+       COUNT(*) FILTER (WHERE member_id IS NOT NULL) AS patients_with_member_id,
+       COUNT(*) FILTER (WHERE payer_name IS NOT NULL) AS patients_with_payer_name,
+       COUNT(*) FILTER (
+         WHERE date_of_birth IS NOT NULL
+           AND primary_insurance_id IS NOT NULL
+           AND member_id IS NOT NULL
+           AND payer_name IS NOT NULL
+       ) AS fully_eligible_patients
+     FROM base`,
+    [userId, appointmentDate],
+  );
+  const r = rows[0] || {};
+  return {
+    appointmentDate,
+    appointmentsOnDate: Number(r.appointments_on_date || 0),
+    patientsOnDate: Number(r.patients_on_date || 0),
+    patientsWithDob: Number(r.patients_with_dob || 0),
+    patientsWithPrimaryInsurance: Number(r.patients_with_primary_insurance || 0),
+    patientsWithMemberId: Number(r.patients_with_member_id || 0),
+    patientsWithPayerName: Number(r.patients_with_payer_name || 0),
+    fullyEligiblePatients: Number(r.fully_eligible_patients || 0),
+  };
+}
+
 async function listOfficeAllySavedIdsForDate(userId, appointmentDate) {
   const { rows: appointmentRows } = await db.query(
     `SELECT
@@ -628,6 +691,13 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
 
     const queue = await listPrimaryInsuranceForUser(userId, avConfig.availity.maxPatientsPerRun, appointmentDate, ids);
     if (!queue.length) {
+      const diag = await getEligibilityQueueDiagnostics(userId, appointmentDate).catch(() => null);
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[eligibility] empty queue userId=${userId} date=${appointmentDate} limit=${avConfig.availity.maxPatientsPerRun} diag=${
+          diag ? JSON.stringify(diag) : 'unavailable'
+        }`,
+      );
       await db.query(
         "UPDATE sync_requests SET status = 'success', current_stage = 'complete', message = $2, finished_at = NOW() WHERE id = $1",
         [
