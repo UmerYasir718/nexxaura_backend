@@ -621,15 +621,28 @@ async function scrapeAppointmentsByDateViaZyte({
   officeAllyUsername,
   officeAllyPassword,
 }) {
-  if (!env.officeAlly.zyteEnabled) return null;
+  if (!env.officeAlly.zyteEnabled) {
+    throw new Error(
+      "Zyte scraping is disabled. Set OA_ZYTE_ENABLED=true to use scrapeAppointmentsByDateViaZyte.",
+    );
+  }
   const dailyUrl = buildDailyViewUrl(env.officeAlly.baseUrl, appointmentDate);
   const html = await requestZyteRenderedHtml({
     url: dailyUrl,
     officeAllyUsername,
     officeAllyPassword,
   });
-  if (!html) return null;
+  if (!html) {
+    throw new Error(
+      "Zyte did not return rendered HTML. Check ZYTE_API_KEY and ZYTE_API_URL.",
+    );
+  }
   const rows = parseAppointmentsFromDailyHtml(html, dailyUrl);
+  if (!rows.length) {
+    throw new Error(
+      "Zyte returned zero appointment rows for the requested date.",
+    );
+  }
   return rows.map((row) => ({ ...row, patientDetails: null }));
 }
 
@@ -642,20 +655,8 @@ async function scrapeAppointmentsByDate({
     throw new Error("Office Ally credentials missing for user");
   }
 
-  // Prefer Zyte when configured, but keep Playwright as a stable fallback path.
-  try {
-    const zyteRows = await scrapeAppointmentsByDateViaZyte({
-      appointmentDate,
-      officeAllyUsername,
-      officeAllyPassword,
-    });
-    if (Array.isArray(zyteRows) && zyteRows.length) return zyteRows;
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.warn("Zyte scrape failed; falling back to Playwright:", error?.message);
-  }
-
-  return scrapeAppointmentsByDateViaPlaywright({
+  // Zyte-only route: avoids Playwright CAPTCHA blocks in production.
+  return scrapeAppointmentsByDateViaZyte({
     appointmentDate,
     officeAllyUsername,
     officeAllyPassword,
