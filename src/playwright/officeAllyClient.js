@@ -116,6 +116,7 @@ async function requestZyteRenderedHtml({
   const commonHeaders = { "Content-Type": "application/json" };
   const targetUrl = String(url || "").trim();
   const baseUrl = String(env.officeAlly.baseUrl || "").trim();
+  const css = (value) => ({ type: "css", value });
 
   // Zyte action grammar can differ by account/version.
   // Try a few compatible payload shapes before failing hard.
@@ -127,19 +128,19 @@ async function requestZyteRenderedHtml({
         browserHtml: true,
         followRedirect: true,
         actions: [
-          { action: "click", selector: "#w-dropdown-toggle-4" },
-          { action: "click", selector: "#nav_practice" },
+          { action: "click", selector: css("#w-dropdown-toggle-4") },
+          { action: "click", selector: css("#nav_practice") },
           {
             action: "type",
-            selector: "input[name='username']",
+            selector: css("input[name='username']"),
             value: officeAllyUsername,
           },
           {
             action: "type",
-            selector: "input[name='password']",
+            selector: css("input[name='password']"),
             value: officeAllyPassword,
           },
-          { action: "click", selector: "button[type='submit']" },
+          { action: "click", selector: css("button[type='submit']") },
           { action: "goto", url: targetUrl },
         ],
       },
@@ -151,19 +152,19 @@ async function requestZyteRenderedHtml({
         browserHtml: true,
         followRedirect: true,
         actions: [
-          { action: "click", selector: "#w-dropdown-toggle-4" },
-          { action: "click", selector: "#nav_practice" },
+          { action: "click", selector: css("#w-dropdown-toggle-4") },
+          { action: "click", selector: css("#nav_practice") },
           {
             action: "fill",
-            selector: "input[name='username']",
+            selector: css("input[name='username']"),
             value: officeAllyUsername,
           },
           {
             action: "fill",
-            selector: "input[name='password']",
+            selector: css("input[name='password']"),
             value: officeAllyPassword,
           },
-          { action: "click", selector: "button[type='submit']" },
+          { action: "click", selector: css("button[type='submit']") },
           { action: "goto", url: targetUrl },
         ],
       },
@@ -175,19 +176,19 @@ async function requestZyteRenderedHtml({
         browserHtml: true,
         followRedirect: true,
         actions: [
-          { action: "click", selector: "#w-dropdown-toggle-4" },
-          { action: "click", selector: "#nav_practice" },
+          { action: "click", selector: css("#w-dropdown-toggle-4") },
+          { action: "click", selector: css("#nav_practice") },
           {
             action: "type",
-            selector: "input[name='username']",
+            selector: css("input[name='username']"),
             value: officeAllyUsername,
           },
           {
             action: "type",
-            selector: "input[name='password']",
+            selector: css("input[name='password']"),
             value: officeAllyPassword,
           },
-          { action: "click", selector: "button[type='submit']" },
+          { action: "click", selector: css("button[type='submit']") },
         ],
       },
     },
