@@ -355,6 +355,7 @@ async function requestZyteRenderedHtml({
   url,
   officeAllyUsername,
   officeAllyPassword,
+  postLoginWaitSeconds = 12,
 }) {
   const apiKey = String(env.officeAlly.zyteApiKey || "").trim();
   if (!apiKey) return null;
@@ -397,9 +398,9 @@ async function requestZyteRenderedHtml({
             `,
           },
           // Office Ally/Auth0 can take time to finish redirect/session bootstrap.
-          { action: "waitForTimeout", timeout: 12.0 },
+          { action: "waitForTimeout", timeout: postLoginWaitSeconds },
           { action: "evaluate", source: `window.location.href = ${JSON.stringify(targetUrl)};` },
-          { action: "waitForTimeout", timeout: 12.0 },
+          { action: "waitForTimeout", timeout: postLoginWaitSeconds },
         ],
       },
     },
@@ -1118,37 +1119,51 @@ async function scrapeAppointmentsByDateViaZyte({
   }
 
   const detailsByPatientId = {};
-  for (const row of rows) {
+  const uniquePatients = rows.reduce((acc, row) => {
     const patientId = String(row["Patient ID"] || "").trim();
     const patientUrl = String(row.PatientUrl || "").trim();
-    if (!patientUrl) continue;
     const detailsKey = patientId || patientUrl;
-    if (detailsByPatientId[detailsKey]) continue;
+    if (!patientUrl || !detailsKey) return acc;
+    if (!acc.find((x) => x.detailsKey === detailsKey)) {
+      acc.push({ detailsKey, patientId, patientUrl });
+    }
+    return acc;
+  }, []);
+
+  // eslint-disable-next-line no-console
+  console.log(`[zyte] patient detail fetch queue size=${uniquePatients.length}`);
+  for (let i = 0; i < uniquePatients.length; i += 1) {
+    const item = uniquePatients[i];
+    const { detailsKey, patientUrl } = item;
     try {
-      const patientTabUrl = withTab(patientUrl, "P");
       const insuranceTabUrl = withTab(patientUrl, "I");
-      const patientHtml = await requestZyteRenderedHtml({
-        url: patientTabUrl,
-        officeAllyUsername,
-        officeAllyPassword,
-      });
+      // Keep Zyte detail calls lightweight: one request on insurance tab carries insurance fields,
+      // and daily row already provides core patient name/DOB fallback.
       const insuranceHtml = await requestZyteRenderedHtml({
         url: insuranceTabUrl,
         officeAllyUsername,
         officeAllyPassword,
+        postLoginWaitSeconds: 4,
       });
-      const patientDetails = parsePatientAndInsuranceDetailsFromHtml(patientHtml);
       const insuranceDetails = parsePatientAndInsuranceDetailsFromHtml(
         insuranceHtml,
       );
       detailsByPatientId[detailsKey] = {
-        patientTab: patientDetails.patientTab || {},
+        patientTab: insuranceDetails.patientTab || {},
         insuranceTab: insuranceDetails.insuranceTab || {},
       };
+      // eslint-disable-next-line no-console
+      console.log(
+        `[zyte] patient detail fetched ${i + 1}/${uniquePatients.length} key=${detailsKey}`,
+      );
     } catch (error) {
       detailsByPatientId[detailsKey] = {
         scrapeError: error?.message || "Failed to scrape Zyte patient details",
       };
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[zyte] patient detail failed ${i + 1}/${uniquePatients.length} key=${detailsKey} error=${error?.message || "unknown"}`,
+      );
     }
   }
 
