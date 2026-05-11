@@ -58,9 +58,45 @@ async function upsertUserCredentials(req, res, next) {
   }
 }
 
+async function getMe(req, res, next) {
+  try {
+    const userId = req.user && req.user.id;
+    if (!userId) {
+      throw new HttpError(401, "Unauthorized");
+    }
+    const user = await userService.getUserById(userId);
+    if (!user) {
+      throw new HttpError(404, "user not found");
+    }
+    return res.status(200).json({
+      id: user.id,
+      email: user.email,
+      full_name: user.full_name,
+      role: user.role,
+    });
+  } catch (e) {
+    return next(e);
+  }
+}
+
+async function getCredentials(req, res, next) {
+  try {
+    const userId = req.user && req.user.id;
+    if (!userId) {
+      throw new HttpError(401, "Unauthorized");
+    }
+    const body = await userService.getCredentialsSummaryForUser(userId);
+    return res.status(200).json(body);
+  } catch (e) {
+    return next(e);
+  }
+}
+
 module.exports = {
   createUser,
   upsertOfficeAllyCredentials,
   upsertAvailityCredentials,
   upsertUserCredentials,
+  getMe,
+  getCredentials,
 };

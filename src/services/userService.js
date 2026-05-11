@@ -230,6 +230,86 @@ async function upsertAvailityCredentials(userId, payload) {
   return { userId, provider: "availity", saved: true };
 }
 
+function isNonEmptyString(v) {
+  return v != null && String(v).trim().length > 0;
+}
+
+/**
+ * Public credential summary for the authenticated user (no passwords).
+ * `flag` is true when Office Ally and Availity rows exist with usernames, passwords, and profile fields saved.
+ */
+async function getCredentialsSummaryForUser(userId) {
+  const user = await getUserById(userId);
+  if (!user) throw new HttpError(404, "user not found");
+
+  const { rows } = await db.query(
+    `SELECT
+       oa.company_name AS oa_company_name,
+       oa.title AS oa_title,
+       oa.description AS oa_description,
+       oa.name AS oa_name,
+       oa.username AS oa_username,
+       oa.password AS oa_password,
+       av.company_name AS av_company_name,
+       av.title AS av_title,
+       av.description AS av_description,
+       av.name AS av_name,
+       av.username AS av_username,
+       av.password AS av_password
+     FROM users u
+     LEFT JOIN office_ally_credentials oa ON oa.user_id = u.id
+     LEFT JOIN availity_credentials av ON av.user_id = u.id
+     WHERE u.id = $1`,
+    [userId],
+  );
+  const row = rows[0] || {};
+
+  const companyName =
+    (isNonEmptyString(row.oa_company_name) && String(row.oa_company_name).trim()) ||
+    (isNonEmptyString(row.av_company_name) && String(row.av_company_name).trim()) ||
+    "";
+  const title =
+    (isNonEmptyString(row.oa_title) && String(row.oa_title).trim()) ||
+    (isNonEmptyString(row.av_title) && String(row.av_title).trim()) ||
+    "";
+  const description =
+    (isNonEmptyString(row.oa_description) && String(row.oa_description).trim()) ||
+    (isNonEmptyString(row.av_description) && String(row.av_description).trim()) ||
+    "";
+  const name =
+    (isNonEmptyString(row.oa_name) && String(row.oa_name).trim()) ||
+    (isNonEmptyString(row.av_name) && String(row.av_name).trim()) ||
+    "";
+
+  const officeallyusernameOrEmail = isNonEmptyString(row.oa_username)
+    ? String(row.oa_username).trim()
+    : "";
+  const availityusernameOrEmail = isNonEmptyString(row.av_username)
+    ? String(row.av_username).trim()
+    : "";
+
+  const flag = Boolean(
+    isNonEmptyString(row.oa_username) &&
+      isNonEmptyString(row.oa_password) &&
+      isNonEmptyString(row.av_username) &&
+      isNonEmptyString(row.av_password) &&
+      isNonEmptyString(companyName) &&
+      isNonEmptyString(title) &&
+      isNonEmptyString(description) &&
+      isNonEmptyString(name),
+  );
+
+  return {
+    companyName,
+    title,
+    description,
+    name,
+    officeallyusernameOrEmail,
+    availityusernameOrEmail,
+    flag,
+  };
+}
+
 async function upsertUserCredentials(userId, payload) {
   const normalized = normalizeCredentialPayload(payload);
   await assertUserExists(userId);
@@ -295,6 +375,7 @@ async function upsertUserCredentials(userId, payload) {
 module.exports = {
   createUserByAdmin,
   getUserById,
+  getCredentialsSummaryForUser,
   upsertOfficeAllyCredentials,
   upsertAvailityCredentials,
   upsertUserCredentials,
