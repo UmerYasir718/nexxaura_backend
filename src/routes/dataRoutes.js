@@ -5,6 +5,8 @@ const { requireAuth } = require('../middlewares/authMiddleware');
 const r = express.Router();
 r.use(requireAuth);
 
+r.post('/patient-insurance-eligibility-detail', dataController.postPatientInsuranceEligibilityDetail);
+
 r.get('/appointments', dataController.getAppointments);
 r.get('/patients', dataController.getPatients);
 r.get('/patients/:patientId/appointments', dataController.getAppointmentsByPatient);

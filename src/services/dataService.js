@@ -206,6 +206,84 @@ async function getDashboardForUser(userId) {
   });
 }
 
+/**
+ * Full patient row + insurance rows + appointments + every Availity eligibility run with all result rows
+ * (includes raw_snapshot / raw_payload — intended for this authenticated detail endpoint only).
+ * @param {string} userId
+ * @param {string} patientId UUID
+ * @returns {Promise<null | object>}
+ */
+async function getPatientInsuranceEligibilityDetail(userId, patientId) {
+  const patientRes = await db.query(
+    `SELECT id, user_id, pm_patient_id, first_name, last_name, date_of_birth, phone_primary, email,
+            raw_payload, created_at, updated_at
+       FROM patients
+      WHERE id = $1 AND user_id = $2`,
+    [patientId, userId],
+  );
+  if (!patientRes.rows.length) return null;
+
+  const [insRes, apptRes, runsRes, resultsRes] = await Promise.all([
+    db.query(
+      `SELECT id, patient_id, coverage_rank, payer_name, member_id, plan_name, group_number, relationship,
+              raw_payload, created_at, updated_at
+         FROM patient_insurance
+        WHERE patient_id = $1
+        ORDER BY coverage_rank`,
+      [patientId],
+    ),
+    db.query(
+      `SELECT id, sync_request_id, user_id, pm_appointment_id, patient_id, appointment_date, starts_at,
+              provider_name, status, reason, created_at, updated_at
+         FROM appointments
+        WHERE user_id = $1 AND patient_id = $2
+        ORDER BY appointment_date DESC, starts_at DESC NULLS LAST
+        LIMIT 500`,
+      [userId, patientId],
+    ),
+    db.query(
+      `SELECT id, user_id, patient_id, coverage_rank, payer_name_used, member_id_used, started_at, finished_at,
+              status, message
+         FROM availity_eligibility_runs
+        WHERE user_id = $1 AND patient_id = $2
+        ORDER BY started_at DESC`,
+      [userId, patientId],
+    ),
+    db.query(
+      `SELECT res.id, res.run_id, res.coverage_status_text, res.is_active, res.member_id, res.payer_id,
+              res.patient_name_on_file, res.benefit_line, res.date_of_service, res.transaction_date,
+              res.insurance_type, res.plan_product, res.coverage_level, res.copay_amount, res.deductible_amount,
+              res.coinsurance, res.oop_remaining, res.raw_snapshot, res.created_at
+         FROM availity_eligibility_results res
+         INNER JOIN availity_eligibility_runs r ON r.id = res.run_id
+        WHERE r.user_id = $1 AND r.patient_id = $2
+        ORDER BY res.created_at DESC`,
+      [userId, patientId],
+    ),
+  ]);
+
+  /** @type {Map<string, object[]>} */
+  const byRun = new Map();
+  for (const row of resultsRes.rows) {
+    const rid = row.run_id;
+    if (!byRun.has(rid)) byRun.set(rid, []);
+    byRun.get(rid).push(row);
+  }
+
+  const runsWithResults = runsRes.rows.map((run) => ({
+    ...run,
+    results: byRun.get(run.id) || [],
+  }));
+
+  return {
+    patientId,
+    patient: patientRes.rows[0],
+    patient_insurance: insRes.rows,
+    appointments: apptRes.rows,
+    availity_eligibility_runs: runsWithResults,
+  };
+}
+
 module.exports = {
   listAppointments,
   listAppointmentsByPatient,
@@ -215,4 +293,5 @@ module.exports = {
   listAvailitySummary,
   listAvailitySummaryByPatient,
   getDashboardForUser,
+  getPatientInsuranceEligibilityDetail,
 };

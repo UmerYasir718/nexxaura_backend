@@ -475,7 +475,68 @@ export async function availityLogin(ctx) {
   await ctx.browser.saveStorageState?.();
 }
 
-export async function availityOpenEligibilityApp(ctx) {
+/**
+ * After an inquiry, the shell URL often stays the same while the iframe still shows
+ * #patient-card (results). Polling for #organization-field then burns the full timeout.
+ * @param {import('playwright').Page} page
+ * @param {string} frameSel
+ */
+async function eligibilityIframeShowsResultsWithoutForm(page, frameSel) {
+  const frameLoc = page.locator(frameSel).first();
+  if (!(await frameLoc.isVisible({ timeout: 2500 }).catch(() => false))) return false;
+  const handle = await frameLoc.elementHandle().catch(() => null);
+  if (!handle) return false;
+  const fr = await handle.contentFrame().catch(() => null);
+  await handle.dispose().catch(() => {});
+  if (!fr) return false;
+  const hasCard = await fr.locator('#patient-card').first().isVisible({ timeout: 2000 }).catch(() => false);
+  if (!hasCard) return false;
+  const orgVisible = await fr.locator('#organization-field').first().isVisible({ timeout: 1500 }).catch(() => false);
+  return !orgVisible;
+}
+
+/**
+ * Wait for the eligibility app iframe and #organization-field (slow shell → embed).
+ * @param {import('playwright').Page} page
+ * @param {string} frameSel
+ * @param {number} maxWaitMs
+ */
+async function pollEligibilityFormVisible(page, frameSel, maxWaitMs) {
+  const started = Date.now();
+  while (Date.now() - started < maxWaitMs) {
+    const frameLoc = page.locator(frameSel).first();
+    if (!(await frameLoc.isVisible({ timeout: 3500 }).catch(() => false))) {
+      await sleep(750);
+      continue;
+    }
+    const handle = await frameLoc.elementHandle().catch(() => null);
+    if (!handle) {
+      await sleep(750);
+      continue;
+    }
+    const fr = await handle.contentFrame().catch(() => null);
+    await handle.dispose().catch(() => {});
+    if (!fr) {
+      await sleep(750);
+      continue;
+    }
+    if (await fr.locator('#organization-field').first().isVisible({ timeout: 6000 }).catch(() => false)) {
+      return true;
+    }
+    await sleep(750);
+  }
+  return false;
+}
+
+/**
+ * @param {{ config: any, logger: any, browser: any }} ctx
+ * @param {{
+ *   embedMaxWaitMs?: number,
+ *   embedAfterDirectMaxWaitMs?: number,
+ *   assignPollMs?: number,
+ * } | undefined} [opts]
+ */
+export async function availityOpenEligibilityApp(ctx, opts = {}) {
   const page = ctx.browser.page;
   const configuredUrl = ctx.config.availity.eligibilityAppUrl;
   const frameSel = ctx.config.availity.contentFrameSelector || 'iframe#newBodyFrame';
@@ -488,6 +549,9 @@ export async function availityOpenEligibilityApp(ctx) {
     eligibilityPathRe.test(String(configuredUrl || '')) || eligibilityShellRe.test(String(configuredUrl || ''))
       ? configuredUrl
       : loaderEligibilityUrl;
+  const embedMaxWaitMs = opts.embedMaxWaitMs ?? 120_000;
+  const embedAfterDirectMaxWaitMs = opts.embedAfterDirectMaxWaitMs ?? 90_000;
+  const assignPollMs = opts.assignPollMs ?? 60_000;
   ctx.logger.step('Open eligibility app', openUrl);
 
   /** @param {string} target */
@@ -498,12 +562,27 @@ export async function availityOpenEligibilityApp(ctx) {
     await sleep(1000);
   };
 
+  const resetIfStuckOnResults = async (where) => {
+    if (!(await eligibilityIframeShowsResultsWithoutForm(page, frameSel))) return;
+    ctx.logger.warn(
+      `[eligibility] inquiry results still in iframe (${where}); reloading top page so the form can load`,
+    );
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 180_000 });
+    await page.waitForLoadState('networkidle', { timeout: 90_000 }).catch(() => {});
+    await tryClickCookieConsent(page, ctx.logger);
+    await sleep(800);
+  };
+
+  await resetIfStuckOnResults('before navigation');
   await navigateAndSettle(openUrl);
+  await resetIfStuckOnResults('after navigation');
 
   const looksLikeEligibilityUrl = (u) => eligibilityPathRe.test(u) || eligibilityShellRe.test(u);
+  const onDirectEligibilityDocument = (u) => eligibilityPathRe.test(u) && !eligibilityShellRe.test(u);
+
   const isEligibilityFrameReady = async () => {
     const frameLoc = page.locator(frameSel).first();
-    if (!(await frameLoc.isVisible({ timeout: 1200 }).catch(() => false))) return false;
+    if (!(await frameLoc.isVisible({ timeout: 8000 }).catch(() => false))) return false;
     const handle = await frameLoc.elementHandle().catch(() => null);
     if (!handle) return false;
     const fr = await handle.contentFrame().catch(() => null);
@@ -512,34 +591,65 @@ export async function availityOpenEligibilityApp(ctx) {
     return fr
       .locator('#organization-field')
       .first()
-      .isVisible({ timeout: 1200 })
+      .isVisible({ timeout: 8000 })
       .catch(() => false);
   };
 
-  const attempts = [loaderEligibilityUrl, directEligibilityUrl];
-  for (const target of attempts) {
-    const current = page.url();
-    if (looksLikeEligibilityUrl(current) && (await isEligibilityFrameReady())) break;
-    if (!looksLikeEligibilityUrl(current)) {
-      ctx.logger.warn(`Unexpected URL while opening eligibility (${current}); forcing ${target}`);
+  const waitMsInitial = embedMaxWaitMs;
+  const waitMsAfterDirect = embedAfterDirectMaxWaitMs;
+
+  if (looksLikeEligibilityUrl(page.url())) {
+    ctx.logger.info(
+      `[eligibility] waiting on page for embed + organization field (up to ${Math.round(waitMsInitial / 1000)}s)…`,
+    );
+    let ok = await pollEligibilityFormVisible(page, frameSel, waitMsInitial);
+    if (ok) {
+      ctx.logger.info('[eligibility] eligibility form ready');
+    } else if (!onDirectEligibilityDocument(page.url())) {
+      ctx.logger.warn(
+        `[eligibility] form not ready after ${Math.round(waitMsInitial / 1000)}s; navigating to direct eligibility URL`,
+      );
+      await navigateAndSettle(directEligibilityUrl);
+      await resetIfStuckOnResults('after direct URL navigation');
+      ctx.logger.info(
+        `[eligibility] waiting for form after direct URL (up to ${Math.round(waitMsAfterDirect / 1000)}s)…`,
+      );
+      ok = await pollEligibilityFormVisible(page, frameSel, waitMsAfterDirect);
+      if (ok) ctx.logger.info('[eligibility] eligibility form ready after direct URL');
     } else {
-      ctx.logger.warn(`Eligibility shell loaded but form not ready (${current}); forcing ${target}`);
+      ctx.logger.warn(
+        `[eligibility] form not ready after ${Math.round(waitMsInitial / 1000)}s on direct eligibility URL`,
+      );
     }
-    await navigateAndSettle(target);
-    if (looksLikeEligibilityUrl(page.url()) && (await isEligibilityFrameReady())) break;
+  } else {
+    ctx.logger.warn(`[eligibility] unexpected URL after open (${page.url()}); navigating loader URL`);
+    await navigateAndSettle(loaderEligibilityUrl);
+    await resetIfStuckOnResults('after loader URL navigation');
+    await pollEligibilityFormVisible(page, frameSel, waitMsInitial);
   }
 
   if (!(looksLikeEligibilityUrl(page.url()) && (await isEligibilityFrameReady()))) {
-    // Last-resort in-page redirect if shell route exists but app readiness is delayed.
-    ctx.logger.warn(`Eligibility form still not ready (${page.url()}); forcing location.assign`);
+    ctx.logger.warn(`[eligibility] form still not ready (${page.url()}); forcing location.assign to loader`);
     await page.evaluate((u) => window.location.assign(u), loaderEligibilityUrl).catch(() => {});
     await sleep(1500);
-    await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 120_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 90_000 }).catch(() => {});
     await tryClickCookieConsent(page, ctx.logger);
+    await pollEligibilityFormVisible(page, frameSel, assignPollMs);
+  }
+
+  if (!(looksLikeEligibilityUrl(page.url()) && (await isEligibilityFrameReady()))) {
+    ctx.logger.warn(`[eligibility] form still not ready (${page.url()}); forcing location.assign to direct`);
+    await page.evaluate((u) => window.location.assign(u), directEligibilityUrl).catch(() => {});
+    await sleep(1500);
+    await page.waitForLoadState('domcontentloaded', { timeout: 120_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 90_000 }).catch(() => {});
+    await tryClickCookieConsent(page, ctx.logger);
+    await pollEligibilityFormVisible(page, frameSel, assignPollMs);
   }
 
   if (!(await isEligibilityFrameReady())) {
-    ctx.logger.info('Waiting for eligibility frame/form to become ready');
+    ctx.logger.info('[eligibility] waiting for eligibility frame/form to become ready');
     await page.locator(frameSel).first().waitFor({ state: 'visible', timeout: 120000 });
     const frame = await availityGetContentFrame(ctx);
     await frame.locator('#organization-field').first().waitFor({ state: 'visible', timeout: 120000 });
@@ -624,21 +734,82 @@ export async function availityWaitForResponse(ctx, frame) {
     chip.first().waitFor({ state: 'visible', timeout: 180000 }),
     err.first().waitFor({ state: 'visible', timeout: 180000 }),
   ]);
-  await sleep(1500);
+  await availityWaitForResultDetailDom(frame);
+}
+
+/**
+ * After chip/member line appears, summary blocks can paint a beat later. Avoid parsing
+ * when #patient-card / plan summary are still missing (wrong fallbacks).
+ * @param {import('playwright').Frame} frame
+ */
+export async function availityWaitForResultDetailDom(frame) {
+  const alertVis = await frame.locator('.MuiAlert-message').first().isVisible({ timeout: 1500 }).catch(() => false);
+  if (alertVis) {
+    await sleep(200);
+    return;
+  }
+  const t = 15000;
+  await Promise.race([
+    frame.locator('#patient-card').waitFor({ state: 'visible', timeout: t }),
+    frame.locator('#plan-details-summary').waitFor({ state: 'visible', timeout: t }),
+    frame.locator('.patient-card-extended-label', { hasText: /member id/i }).first().waitFor({ state: 'visible', timeout: t }),
+  ]).catch(() => {});
+  await sleep(500);
 }
 
 export async function availityParseResponseSnapshot(frame) {
   return frame.evaluate(() => {
     /** @type {Record<string, string>} */
     const labels = {};
-    document.querySelectorAll('.patient-card-extended-label').forEach((el) => {
+    const card = document.querySelector('#patient-card');
+
+    const mergeLabel = (k, v) => {
+      if (!k || v == null || String(v).trim() === '') return;
+      const key = String(k).replace(/:\s*$/, '').trim();
+      if (!key) return;
+      if (Object.prototype.hasOwnProperty.call(labels, key)) return;
+      labels[key] = String(v).trim();
+    };
+
+    const planList = document.querySelector('#plan-details-summary');
+    if (planList) {
+      planList.querySelectorAll('li').forEach((li) => {
+        const left = li.querySelector('span.text-left');
+        const right = li.querySelector('span.text-right');
+        if (!left || !right) return;
+        const strong = left.querySelector('strong');
+        if (!strong) return;
+        const k = strong.innerText.replace(/:\s*$/, '').trim();
+        const rightStrong = right.querySelector('strong');
+        const v = (rightStrong || right).innerText.trim();
+        if (k) labels[k] = v;
+      });
+    }
+
+    const extRoot = card || document.body;
+    extRoot.querySelectorAll('.patient-card-extended-label').forEach((el) => {
       const sp = el.querySelector('span');
       const sm = el.querySelector('small');
       if (!sp || !sm) return;
       const k = sp.innerText.replace(/:\s*$/, '').trim();
       const v = sm.innerText.trim();
-      if (k) labels[k] = v;
+      if (k) mergeLabel(k, v);
     });
+
+    if (card) {
+      const pickAdjacentSmall = (re) => {
+        const nodes = [...card.querySelectorAll('small')];
+        const idx = nodes.findIndex((s) => re.test(s.innerText));
+        if (idx === -1) return;
+        const label = nodes[idx].innerText.replace(/:\s*$/, '').trim();
+        const next = nodes[idx].nextElementSibling;
+        if (next && next.tagName === 'SMALL') mergeLabel(label, next.innerText.trim());
+      };
+      pickAdjacentSmall(/date of service/i);
+      pickAdjacentSmall(/transaction id/i);
+      pickAdjacentSmall(/transaction time/i);
+      pickAdjacentSmall(/customer id/i);
+    }
 
     const txSpan = [...document.querySelectorAll('span')].find((s) =>
       /transaction date/i.test(s.innerText),
@@ -650,35 +821,76 @@ export async function availityParseResponseSnapshot(frame) {
     }
     if (transactionDate && !labels['Transaction Date']) labels['Transaction Date'] = transactionDate;
 
-    const chip = document.querySelector('.MuiChip-label');
-    const chipText = chip ? chip.innerText.trim() : '';
-
-    const planP = [...document.querySelectorAll('p')].find((p) => p.innerText.includes('Plan / Product'));
-    let planProduct = '';
-    if (planP) {
-      const span = planP.querySelector('span');
-      planProduct = span ? span.innerText.trim() : '';
+    let chipText = '';
+    if (card) {
+      const scoped =
+        card.querySelector('#patient-summary .MuiChip-label') || card.querySelector('.MuiChip-label');
+      chipText = scoped ? scoped.innerText.trim() : '';
+    }
+    if (!chipText) {
+      const chip = document.querySelector('.MuiChip-label');
+      chipText = chip ? chip.innerText.trim() : '';
     }
 
-    const insP = [...document.querySelectorAll('p')].find((p) => p.innerText.includes('Insurance Type'));
-    let insuranceType = '';
-    if (insP) {
-      const span = insP.querySelector('span');
-      insuranceType = span ? span.innerText.trim() : '';
+    const planScope =
+      card?.closest('header')?.parentElement || document.querySelector('main') || document.body;
+    const ps = [...planScope.querySelectorAll('p')];
+    const spanAfter = (p) => {
+      const span = p && p.querySelector('span');
+      return span ? span.innerText.trim() : '';
+    };
+    const planP = ps.find((p) => /\bPlan\s*\/\s*Product\b/i.test(p.innerText));
+    let planProduct = spanAfter(planP);
+    const insP = ps.find((p) => /\bInsurance Type\b/i.test(p.innerText));
+    let insuranceType = spanAfter(insP);
+    const levP = ps.find(
+      (p) => /\bCoverage Level\b/i.test(p.innerText) && /:\s*/.test(p.innerText),
+    );
+    let coverageLevel = spanAfter(levP);
+    if (!coverageLevel) {
+      const levLoose = ps.find((p) => /\bCoverage Level\b/i.test(p.innerText));
+      coverageLevel = spanAfter(levLoose);
     }
 
-    const levP = [...document.querySelectorAll('p')].find((p) => p.innerText.includes('Coverage Level'));
-    let coverageLevel = '';
-    if (levP) {
-      const span = levP.querySelector('span');
-      coverageLevel = span ? span.innerText.trim() : '';
+    let patientNameOnFile = '';
+    if (card) {
+      const h4 = card.querySelector('#patient-summary p.h4') || card.querySelector('p.h4');
+      patientNameOnFile = h4 ? h4.innerText.trim() : '';
+    }
+    if (!patientNameOnFile) {
+      const summary = document.querySelector('#patient-summary');
+      const h4s = summary && summary.querySelector('p.h4');
+      patientNameOnFile = h4s ? h4s.innerText.trim() : '';
+    }
+    if (!patientNameOnFile) {
+      const looksLikeMemberIdOnly = (s) => {
+        const t = String(s || '').trim();
+        if (t.length < 6 || t.length > 32) return false;
+        if (/,/.test(t)) return false;
+        return /^[A-Z0-9-]+$/i.test(t) && /\d/.test(t);
+      };
+      const lastCommaFirst = (s) =>
+        /[A-Za-z][A-Za-z'\-\s]{1,50},\s*[A-Za-z][A-Za-z'\-\s]{1,50}/.test(String(s));
+      const candidates = [
+        document.querySelector('.list-group-item-heading p.h4'),
+        document.querySelector('header p.h4'),
+        ...document.querySelectorAll('main p.h4'),
+      ].filter(Boolean);
+      for (const el of candidates) {
+        const t = el.innerText.replace(/\s+/g, ' ').trim();
+        if (!t || looksLikeMemberIdOnly(t)) continue;
+        if (lastCommaFirst(t)) {
+          patientNameOnFile = t;
+          break;
+        }
+      }
     }
 
-    const nameStrong = document.querySelector('.list-group-item strong');
-    const patientNameOnFile = nameStrong ? nameStrong.innerText.trim() : '';
-
-    const benefitSmall = document.querySelector('.list-group-item div small');
-    const benefitLine = benefitSmall ? benefitSmall.innerText.trim() : '';
+    let benefitLine = '';
+    if (card) {
+      const benefitSmall = card.querySelector('.list-group-item div small');
+      benefitLine = benefitSmall ? benefitSmall.innerText.trim() : '';
+    }
 
     const alert = document.querySelector('.MuiAlert-message');
     const alertText = alert ? alert.innerText.trim() : '';
@@ -692,8 +904,29 @@ export async function availityParseResponseSnapshot(frame) {
       patientNameOnFile,
       benefitLine,
       alertText,
+      parseHints: {
+        hadPatientCard: Boolean(card),
+        hadPlanDetailsSummary: Boolean(planList),
+        parseIncomplete: !card && !planList,
+      },
     };
   });
+}
+
+function looksLikePayerMemberIdToken(s) {
+  const t = String(s || '').trim();
+  if (t.length < 6 || t.length > 36) return false;
+  if (/,/.test(t)) return false;
+  return /^[A-Z0-9-]+$/i.test(t) && /\d/.test(t);
+}
+
+export function validateEligibilitySnapshotOrThrow(snap) {
+  if (snap.alertText) throw new Error(snap.alertText);
+  const L = snap.labels || {};
+  const mid = String(L['Member ID'] || L['Subscriber ID'] || '').trim();
+  if (snap.parseHints?.parseIncomplete && !mid) {
+    throw new Error('Availity eligibility result summary did not render in time');
+  }
 }
 
 export function mapAvailitySnapshotToResultRow(snap) {
@@ -705,12 +938,17 @@ export function mapAvailitySnapshotToResultRow(snap) {
   const chip = snap.chipText || '';
   const isActive = /active coverage/i.test(chip) && !/inactive|not eligible/i.test(chip);
 
+  let patientNameOnFile = snap.patientNameOnFile || null;
+  if (patientNameOnFile && (patientNameOnFile === memberId || looksLikePayerMemberIdToken(patientNameOnFile))) {
+    patientNameOnFile = null;
+  }
+
   return {
     coverageStatusText: chip || null,
     isActive,
     memberId: memberId || null,
     payerId: payerId || null,
-    patientNameOnFile: snap.patientNameOnFile || null,
+    patientNameOnFile,
     benefitLine: snap.benefitLine || null,
     dateOfService: dateOfService || null,
     transactionDate: transactionDate || null,

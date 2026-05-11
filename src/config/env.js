@@ -73,9 +73,13 @@ module.exports = {
     baseUrl: process.env.OA_BASE_URL || "https://pm.officeally.com/pm/",
     headless:
       String(process.env.OA_HEADLESS || "true").toLowerCase() === "true",
+    scrapeMode: String(process.env.OA_SCRAPE_MODE || "").trim().toLowerCase(),
+    usePlaywright: boolEnv("OA_USE_PLAYWRIGHT", false),
     zyteEnabled: boolEnvOrAutoByKey("OA_ZYTE_ENABLED", "ZYTE_API_KEY"),
     zyteApiKey: process.env.ZYTE_API_KEY || "",
     zyteApiUrl: process.env.ZYTE_API_URL || "https://api.zyte.com/v1/extract",
+    /** Daily scrape + patient visits can exceed MEDICAL_BACKEND_TIMEOUT_MS; cap separately with OA_OFFICE_ALLY_SCRAPE_TIMEOUT_MS */
+    scrapeTimeoutMs: numberEnv("OA_OFFICE_ALLY_SCRAPE_TIMEOUT_MS", 900000),
   },
   /** FastAPI medical backend (transcription + coding) — do not commit real URLs/keys; use .env */
   medicalBackend: {

@@ -8,6 +8,7 @@ router.post('/appointment-sync', requireAuth, syncController.createDateSync);
 router.post('/date-sync', requireAuth, syncController.createDateSync); // backward-compatible alias
 router.post('/eligibility-verification', requireAuth, syncController.createEligibilityVerification);
 router.post('/eligibilityandinsurance', requireAuth, syncController.createEligibilityAndInsurance);
+router.post('/claim-status-remittance', requireAuth, syncController.createClaimStatusRemittance);
 router.post('/otp', requireAuth, otpController.submitOtp);
 router.get('/runs', requireAuth, syncController.getMyRuns);
 router.get('/runs/:id', requireAuth, syncController.getRunById);

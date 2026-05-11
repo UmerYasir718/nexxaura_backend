@@ -6,6 +6,7 @@ const {
   runEndToEndSync,
   runOfficeAllyStage,
   runAvailityStage,
+  runAvailityClaimStatusStage,
 } = require("./pipelineService");
 
 function decryptVendorPasswordOrThrow(cipherText, providerLabel) {
@@ -58,6 +59,18 @@ function buildEligibilityResponse(availity, message) {
     successCount: availity.successCount,
     failedCount: (availity.results || []).filter((r) => r.status === "failed")
       .length,
+  };
+}
+
+function buildClaimStatusResponse(claimStatus, message) {
+  return {
+    status: "good",
+    message,
+    queueSize: claimStatus.queueSize || 0,
+    processedPatients: claimStatus.processedPatients || 0,
+    paidRowsProcessed: claimStatus.paidRowsProcessed || 0,
+    downloadedFiles: claimStatus.downloadedFiles || 0,
+    files: claimStatus.files || [],
   };
 }
 
@@ -421,6 +434,63 @@ async function requestEligibilityVerification({ userId, appointmentDate }) {
   return { syncRequestId: syncId, message: "Eligibility verification started" };
 }
 
+async function runClaimStatusRemittance({ userId }) {
+  const syncDate = new Date().toISOString().slice(0, 10);
+  const availityCreds = await fetchAvailityCreds(userId);
+  const created = await createSyncRun({
+    userId,
+    appointmentDate: syncDate,
+    currentStage: "availity_claim_status",
+    message: "Availity claim status endpoint started",
+  });
+  if (created.alreadyProcessing) {
+    return created;
+  }
+  const syncId = created.syncRequestId;
+  try {
+    const claimStatus = await runAvailityClaimStatusStage({
+      userId,
+      syncId,
+      availityCreds,
+    });
+    return buildClaimStatusResponse(
+      claimStatus,
+      "Claim status remittance download completed",
+    );
+  } catch (e) {
+    await markSyncFailed(syncId, e);
+    throw e;
+  }
+}
+
+async function requestClaimStatusRemittance({ userId }) {
+  const syncDate = new Date().toISOString().slice(0, 10);
+  const availityCreds = await fetchAvailityCreds(userId);
+  const created = await createSyncRun({
+    userId,
+    appointmentDate: syncDate,
+    currentStage: "availity_claim_status",
+    message: "Availity claim status endpoint started",
+  });
+  if (created.alreadyProcessing) {
+    return created;
+  }
+  const syncId = created.syncRequestId;
+  setImmediate(() => {
+    runAvailityClaimStatusStage({
+      userId,
+      syncId,
+      availityCreds,
+    })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[claim-status-remittance pipeline failed]", err);
+        return markSyncFailed(syncId, err);
+      });
+  });
+  return { syncRequestId: syncId, message: "Claim status remittance flow started" };
+}
+
 async function runEligibilityAndInsurance({ userId, appointmentDate }) {
   const date = normalizeDateOrThrow(appointmentDate);
   // eslint-disable-next-line no-console
@@ -478,6 +548,8 @@ module.exports = {
   runDateSyncOnly,
   requestEligibilityVerification,
   runEligibilityVerification,
+  requestClaimStatusRemittance,
+  runClaimStatusRemittance,
   runEligibilityAndInsurance,
   getRunsByUser,
   getRunByIdForUser,

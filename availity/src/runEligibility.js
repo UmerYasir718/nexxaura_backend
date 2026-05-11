@@ -45,6 +45,7 @@ export async function runAvailityEligibility(ctx) {
 
   let successes = 0;
   let failures = 0;
+  let eligibilityOpenCount = 0;
 
   try {
     await browser.launch();
@@ -78,7 +79,13 @@ export async function runAvailityEligibility(ctx) {
               );
             }
 
-            await av.availityOpenEligibilityApp(scraperCtx);
+            await av.availityOpenEligibilityApp(
+              scraperCtx,
+              attempt > 1 || eligibilityOpenCount === 0
+                ? {}
+                : { embedMaxWaitMs: 16_000, embedAfterDirectMaxWaitMs: 14_000, assignPollMs: 14_000 },
+            );
+            eligibilityOpenCount += 1;
             const frame = await av.availityGetContentFrame(scraperCtx);
             await frame
               .locator("#organization-field")
@@ -96,9 +103,7 @@ export async function runAvailityEligibility(ctx) {
             }
 
             const snap = await av.availityParseResponseSnapshot(frame);
-            if (snap.alertText) {
-              throw new Error(snap.alertText);
-            }
+            av.validateEligibilitySnapshotOrThrow(snap);
 
             mapped = av.mapAvailitySnapshotToResultRow(snap);
             lastErr = null;

@@ -2,6 +2,8 @@ const path = require('path');
 
 const DEFAULT_ELIGIBILITY_APP_URL =
   'https://essentials.availity.com/static/web/onb/onboarding-ui-apps/navigation/#/loadApp/?appUrl=%2Fstatic%2Fweb%2Fpres%2Fweb%2Feligibility%2F';
+const DEFAULT_CLAIM_STATUS_APP_URL =
+  'https://essentials.availity.com/static/web/onb/onboarding-ui-apps/navigation/#/loadApp/?appUrl=%2Fstatic%2Fweb%2Fclaim-status%2F';
 
 function int(v, defaultValue) {
   const n = parseInt(String(v), 10);
@@ -46,6 +48,14 @@ function buildAvailityConfig({ avUsername, avPassword }) {
         process.env.AVAILITY_LOGIN_URL ||
         'https://essentials.availity.com/static/public/onb/onboarding-ui-apps/availity-fr-ui/#/login',
       eligibilityAppUrl: normalizeEligibilityAppUrl(process.env.AVAILITY_ELIGIBILITY_URL),
+      claimStatusAppUrl:
+        process.env.AVAILITY_CLAIM_STATUS_URL || DEFAULT_CLAIM_STATUS_APP_URL,
+      claimStatusDownloadDir: (() => {
+        const raw = process.env.AVAILITY_CLAIM_PDF_DIR || 'downloads/availity-claim-status';
+        const s = String(raw).trim();
+        if (!s) return path.resolve(process.cwd(), 'downloads/availity-claim-status');
+        return path.isAbsolute(s) ? s : path.resolve(process.cwd(), s);
+      })(),
       username: avUsername,
       password: avPassword,
       organizationQuery: process.env.AVAILITY_ORG_QUERY || 'OPEN MIND HEALTH',
@@ -62,6 +72,8 @@ function buildAvailityConfig({ avUsername, avPassword }) {
       mfaAuthenticatorMethodText: process.env.AVAILITY_MFA_AUTHENTICATOR_TEXT || 'Authenticate me using my Authenticator app',
       mfaWaitTimeoutMs: int(process.env.AVAILITY_MFA_WAIT_MS, 0),
       resultScreenDelayMs: int(process.env.AVAILITY_RESULT_SCREEN_DELAY_MS, 0),
+      /** When queue is empty, still navigate to eligibility in the browser (default off). */
+      openEligibilityAppOnEmptyQueue: bool(process.env.AVAILITY_OPEN_ELIGIBILITY_ON_EMPTY_QUEUE, false),
     },
   };
 }
