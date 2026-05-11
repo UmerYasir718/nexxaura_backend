@@ -3,6 +3,11 @@ jest.mock('axios', () => ({
 }));
 
 const axios = require('axios');
+const env = require('../src/config/env');
+if (!String(env.officeAlly.zyteApiKey || '').trim()) {
+  env.officeAlly.zyteApiKey = 'jest-test-zyte-key';
+}
+
 const { __test } = require('../src/playwright/officeAllyClient');
 
 describe('officeAlly patient visits last-name flow', () => {
