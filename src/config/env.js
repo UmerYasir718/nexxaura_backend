@@ -42,8 +42,20 @@ function normalizeMedicalBackendBaseUrl(raw) {
   return noQuery.replace(/\/docs\/?$/i, "").replace(/\/+$/, "");
 }
 
+/** Express + express-rate-limit: set when behind ALB/nginx so X-Forwarded-For is trusted. */
+function trustProxyFromEnv() {
+  const raw = process.env.TRUST_PROXY;
+  if (raw === undefined || raw === "") return 1;
+  const lower = String(raw).toLowerCase();
+  if (lower === "false" || raw === "0") return false;
+  if (lower === "true") return true;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 1;
+}
+
 module.exports = {
   serviceName: process.env.SERVICE_NAME || "nexxaura-node",
+  trustProxy: trustProxyFromEnv(),
   port: Number(process.env.PORT || 4000),
   workerMetricsPort: Number(process.env.WORKER_METRICS_PORT || 9109),
   appVersion: process.env.APP_VERSION || process.env.GIT_SHA || "dev",

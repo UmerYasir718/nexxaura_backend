@@ -15,6 +15,7 @@ const { httpMetrics } = require("./middlewares/httpMetrics");
 const { metricsHandler } = require("./metrics/metricsHandler");
 
 const app = express();
+app.set("trust proxy", env.trustProxy);
 
 const corsOptions = {
   // If CORS_ORIGINS is not set, allow all origins (dev only — set CORS_ORIGINS in production).
