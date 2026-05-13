@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const cacheService = require('./cacheService');
+const { remittanceEobRowsToXlsxBuffer } = require('../utils/remittanceEobExcel');
 
 async function listAppointments(userId) {
   const { rows } = await db.query(
@@ -284,6 +285,62 @@ async function getPatientInsuranceEligibilityDetail(userId, patientId) {
   };
 }
 
+/**
+ * EOB rows for remittance files owned by the user, joined to patient DOB when
+ * `primary_insured_id` matches `patient_insurance.member_id` and the patient
+ * has at least one `patient_visits` row for this user.
+ *
+ * @param {string} userId
+ * @returns {Promise<Buffer>} xlsx
+ */
+async function exportAvailityRemittanceEobRowsForUserExcelBuffer(userId) {
+  const { rows } = await db.query(
+    `SELECT
+        e.id,
+        e.file_id,
+        e.claim_no,
+        e.patient_name,
+        m.dob AS dob,
+        e.primary_insured_id,
+        e.office_ally,
+        e.dos,
+        e.work_status,
+        e.insurance,
+        e.total_charges,
+        e.allowed_amount,
+        e.primary_paid,
+        e.patient_responsibility,
+        e.adjustment,
+        e.balance,
+        e.chk_eft,
+        e.chk_eft_date,
+        e.remittance_status,
+        e.remittance_sub_status,
+        e.action,
+        e.remarks,
+        e.source_row_index,
+        e.created_at,
+        e.updated_at
+     FROM availity_claim_remittance_eob_rows e
+     INNER JOIN availity_claim_remittance_files f
+       ON f.id = e.file_id AND f.user_id = $1
+     INNER JOIN LATERAL (
+       SELECT pat.date_of_birth AS dob
+         FROM patient_insurance pi
+         INNER JOIN patients pat ON pat.id = pi.patient_id AND pat.user_id = $1
+         INNER JOIN patient_visits pv ON pv.user_id = $1 AND pv.patient_id = pat.id
+        WHERE NULLIF(TRIM(pi.member_id), '') IS NOT NULL
+          AND NULLIF(TRIM(e.primary_insured_id), '') IS NOT NULL
+          AND LOWER(TRIM(pi.member_id)) = LOWER(TRIM(e.primary_insured_id))
+        ORDER BY pi.coverage_rank
+        LIMIT 1
+     ) m ON TRUE
+     ORDER BY e.dos NULLS LAST, e.created_at DESC`,
+    [userId],
+  );
+  return remittanceEobRowsToXlsxBuffer(rows);
+}
+
 module.exports = {
   listAppointments,
   listAppointmentsByPatient,
@@ -294,4 +351,5 @@ module.exports = {
   listAvailitySummaryByPatient,
   getDashboardForUser,
   getPatientInsuranceEligibilityDetail,
+  exportAvailityRemittanceEobRowsForUserExcelBuffer,
 };

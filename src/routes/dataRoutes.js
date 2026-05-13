@@ -15,5 +15,9 @@ r.get('/patients/:patientId/insurance', dataController.getPatientInsuranceByPati
 r.get('/availity', dataController.getAvailitySummary);
 r.get('/patients/:patientId/availity', dataController.getAvailitySummaryByPatient);
 r.get('/dashboard', dataController.getDashboard);
+r.get(
+  '/availity-claim-remittance-eob-export',
+  dataController.getAvailityRemittanceEobExport,
+);
 
 module.exports = r;

@@ -78,6 +78,25 @@ async function getDashboard(req, res, next) {
   }
 }
 
+/** Bearer auth — xlsx of remittance EOB rows scoped to the user (see dataService). */
+async function getAvailityRemittanceEobExport(req, res, next) {
+  try {
+    const buf = await dataService.exportAvailityRemittanceEobRowsForUserExcelBuffer(
+      req.user.id,
+    );
+    const day = new Date().toISOString().slice(0, 10);
+    const filename = `availity-claim-remittance-eob-${day}.xlsx`;
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(buf);
+  } catch (e) {
+    return next(e);
+  }
+}
+
 /** POST body: { "patientId": "<uuid>" } — full patient + insurance + appointments + Availity runs/results (includes raw payloads). */
 async function postPatientInsuranceEligibilityDetail(req, res, next) {
   try {
@@ -109,4 +128,5 @@ module.exports = {
   getAvailitySummaryByPatient,
   getDashboard,
   postPatientInsuranceEligibilityDetail,
+  getAvailityRemittanceEobExport,
 };
