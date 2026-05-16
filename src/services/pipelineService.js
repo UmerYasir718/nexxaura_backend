@@ -10,8 +10,11 @@ const { scrapeAppointmentsByDate } = require("../playwright/officeAllyClient");
 const {
   availityLoginWithApiOtp,
   sessionLooksReadyForEligibility,
+  sessionLooksReadyForClaimStatus,
   pageNeedsAvailityLogin,
   tryRecoverEligibilitySession,
+  tryRecoverClaimStatusSession,
+  navigateToClaimStatusAfterLogin,
   tryClickCookieConsent,
 } = require("../playwright/availityOtpFlow");
 const {
@@ -1648,11 +1651,8 @@ async function runAvailityStage({
 }
 
 async function runAvailityClaimStatusStage({ userId, syncId, availityCreds }) {
-  const isNavigationShellRoot = (url) =>
-    /\/static\/web\/onb\/onboarding-ui-apps\/navigation\/#\/?$/i.test(
-      String(url || "").split("?")[0],
-    );
   const logger = createLogger();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const avConfig = buildAvailityConfig({
     avUsername: availityCreds.username,
     avPassword: availityCreds.password,
@@ -1717,53 +1717,78 @@ async function runAvailityClaimStatusStage({ userId, syncId, availityCreds }) {
     avConfig.availity.claimStatusDownloadDir,
   );
 
+  const claimUrl = avConfig.availity.claimStatusAppUrl;
+  const contentFrameSel = avConfig.availity.contentFrameSelector;
+
   try {
     let sessionReady = false;
     if (hasStoredState) {
       await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
         syncId,
-        "Availity claim status: restoring saved session",
+        "Availity claim status: checking saved session",
       ]);
-      // Try claim app first; if session is still valid, skip login+OTP wait completely.
+      logger.info(`Availity claim status: probing session via ${claimUrl}`);
       await page
-        .goto(avConfig.availity.claimStatusAppUrl, {
-          waitUntil: "domcontentloaded",
-          timeout: 120000,
-        })
+        .goto(claimUrl, { waitUntil: "domcontentloaded", timeout: 180000 })
         .catch(() => {});
       await page
-        .waitForLoadState("networkidle", { timeout: 120000 })
+        .waitForLoadState("networkidle", { timeout: 30000 })
         .catch(() => {});
-      logger.info(
-        `Availity claim status: current URL after session-restore open=${page.url()}`,
-      );
-      if (isNavigationShellRoot(page.url())) {
+      await tryClickCookieConsent(page, logger);
+      await sleep(600);
+      logger.info(`Availity claim status: session probe initial url=${page.url()}`);
+      if (isAvailityNavigationShellRoot(page.url())) {
         logger.warn(
-          `Availity claim status: detected navigation shell root, forcing claim URL=${avConfig.availity.claimStatusAppUrl}`,
+          "Availity claim status: navigation shell after open; reloading claim status URL",
         );
         await page
-          .goto(avConfig.availity.claimStatusAppUrl, {
-            waitUntil: "domcontentloaded",
-            timeout: 120000,
-          })
+          .goto(claimUrl, { waitUntil: "domcontentloaded", timeout: 180000 })
           .catch(() => {});
         await page
-          .waitForLoadState("networkidle", { timeout: 120000 })
+          .waitForLoadState("networkidle", { timeout: 30000 })
           .catch(() => {});
-        logger.info(
-          `Availity claim status: URL after forced switch=${page.url()}`,
-        );
+        await tryClickCookieConsent(page, logger);
+        logger.info(`Availity claim status: session probe after reload url=${page.url()}`);
       }
-      sessionReady = await isClaimStatusFormVisible(
-        page,
-        avConfig.availity.contentFrameSelector,
-      );
-      logger.info(
-        `Availity claim status: session visibility check after restore=${sessionReady} url=${page.url()}`,
-      );
+      const sessionProbeDeadline = Date.now() + 45000;
+      while (Date.now() < sessionProbeDeadline) {
+        if (await pageNeedsAvailityLogin(page)) {
+          logger.info(
+            `Availity claim status: session probe — login required, stored session expired (url=${page.url()})`,
+          );
+          break;
+        }
+        sessionReady = await sessionLooksReadyForClaimStatus(page, contentFrameSel);
+        if (sessionReady) break;
+        await sleep(1000);
+      }
       if (sessionReady) {
         logger.info(
-          "Availity claim status: active session restored; skipping login flow",
+          "Availity claim status: saved session works — skipping login / OTP",
+        );
+      } else {
+        logger.info(
+          "Availity claim status: claim form did not load with saved session; will use login flow",
+        );
+        const recovered = await tryRecoverClaimStatusSession(
+          page,
+          avConfig.availity,
+          logger,
+        );
+        if (recovered) {
+          sessionReady = true;
+          logger.info(
+            "Availity claim status: session recovered after claim URL re-open — skipping login / OTP",
+          );
+        }
+      }
+    }
+
+    if (!sessionReady) {
+      sessionReady = await sessionLooksReadyForClaimStatus(page, contentFrameSel);
+      if (sessionReady) {
+        logger.info(
+          "Availity claim status: form appeared after probe — skipping login / OTP",
         );
       }
     }
@@ -1773,12 +1798,17 @@ async function runAvailityClaimStatusStage({ userId, syncId, availityCreds }) {
         syncId,
         "Availity claim status: logging in",
       ]);
+      const pageUrl = String(page.url() || "");
+      const skipInitialGoto =
+        /availity\.com/i.test(pageUrl) && !/#\/login\b/i.test(pageUrl);
       await availityLoginWithApiOtp(
         page,
         { config: avConfig },
         availityCreds,
         logger,
         {
+          targetApp: "claimStatus",
+          skipInitialGoto,
           onAwaitingOtp: async () => {
             await db.query(
               "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
@@ -1801,59 +1831,36 @@ async function runAvailityClaimStatusStage({ userId, syncId, availityCreds }) {
           },
         },
       );
-
-      // Login may land on dashboard/navigation shell. Force claim status app URL
-      // before validating claim-form session readiness.
-      await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
-        syncId,
-        "Availity claim status: navigating to claim status app after login",
-      ]);
-      await page
-        .goto(avConfig.availity.claimStatusAppUrl, {
-          waitUntil: "domcontentloaded",
-          timeout: 120000,
-        })
-        .catch(() => {});
-      await page
-        .waitForLoadState("networkidle", { timeout: 120000 })
-        .catch(() => {});
-      logger.info(
-        `Availity claim status: current URL after login=${page.url()}`,
-      );
-      if (isNavigationShellRoot(page.url())) {
-        logger.warn(
-          `Availity claim status: still on navigation shell root, forcing claim URL=${avConfig.availity.claimStatusAppUrl}`,
-        );
-        await page
-          .goto(avConfig.availity.claimStatusAppUrl, {
-            waitUntil: "domcontentloaded",
-            timeout: 120000,
-          })
-          .catch(() => {});
-        await page
-          .waitForLoadState("networkidle", { timeout: 120000 })
-          .catch(() => {});
-        logger.info(
-          `Availity claim status: URL after forced post-login switch=${page.url()}`,
-        );
+      if (storageStatePath) {
+        await fs.promises.mkdir(path.dirname(storageStatePath), {
+          recursive: true,
+        });
+        await context.storageState({ path: storageStatePath });
       }
-    }
-
-    // Session is compulsory for claim status processing.
-    const hasSession = await isClaimStatusFormVisible(
-      page,
-      avConfig.availity.contentFrameSelector,
-    );
-    if (!hasSession) {
-      throw new Error(
-        "Availity claim status flow requires an authenticated session. Login/MFA session was not established.",
+      await db.query(
+        "UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
+        [syncId, "Availity claim status: MFA finished, opening claim status app"],
       );
-    }
-    if (storageStatePath) {
+    } else if (storageStatePath) {
       await fs.promises.mkdir(path.dirname(storageStatePath), {
         recursive: true,
       });
-      await context.storageState({ path: storageStatePath });
+      await context.storageState({ path: storageStatePath }).catch(() => {});
+      await db.query(
+        "UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
+        [syncId, "Availity claim status: restored session OK, skipping MFA"],
+      );
+    }
+
+    if (!(await sessionLooksReadyForClaimStatus(page, contentFrameSel))) {
+      await navigateToClaimStatusAfterLogin(page, avConfig.availity, logger);
+    }
+
+    sessionReady = await sessionLooksReadyForClaimStatus(page, contentFrameSel);
+    if (!sessionReady) {
+      throw new Error(
+        "Availity claim status flow requires an authenticated session. Login/MFA session was not established.",
+      );
     }
 
     await db.query(

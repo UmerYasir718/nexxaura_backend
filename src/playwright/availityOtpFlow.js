@@ -1,4 +1,5 @@
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { isClaimStatusFormVisible } = require('./availityClaimStatusFlow');
 
 function escapeRe(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -234,15 +235,25 @@ async function pageLooksLikePostMfaSession(page, contentFrameSel) {
  * After OTP submit Availity may stay on fr-ui/#/login briefly before redirect.
  * @returns {Promise<boolean>}
  */
-async function waitForAvailitySessionAfterMfa(page, contentFrameSel, logger, maxWaitMs = 120000) {
+async function waitForAvailitySessionAfterMfa(
+  page,
+  contentFrameSel,
+  logger,
+  maxWaitMs = 120000,
+  targetApp = 'eligibility',
+) {
   const deadline = Date.now() + maxWaitMs;
   let lastDiagLog = 0;
   while (Date.now() < deadline) {
-    if (await isEligibilityFormVisible(page, contentFrameSel)) {
+    if (targetApp === 'claimStatus') {
+      if (await sessionLooksReadyForClaimStatus(page, contentFrameSel)) {
+        logger?.info?.('MFA: claim status form visible — session ready');
+        return true;
+      }
+    } else if (await isEligibilityFormVisible(page, contentFrameSel)) {
       logger?.info?.('MFA: eligibility form visible — session ready');
       return true;
-    }
-    if (await pageLooksLikePostMfaSession(page, contentFrameSel)) {
+    } else if (await pageLooksLikePostMfaSession(page, contentFrameSel)) {
       logger?.info?.(`MFA: authenticated shell detected (${page.url()})`);
       return true;
     }
@@ -367,12 +378,98 @@ async function sessionLooksReadyForEligibility(page, contentFrameSel) {
   return pageLooksLikePostMfaSession(page, contentFrameSel);
 }
 
+/** Claim status is ready only when the inquiry form is visible (not generic Availity shell). */
+async function sessionLooksReadyForClaimStatus(page, contentFrameSel) {
+  return isClaimStatusFormVisible(page, contentFrameSel);
+}
+
+async function postMfaSessionReadyForApp(page, contentFrameSel, targetApp = 'eligibility') {
+  if (targetApp === 'claimStatus') {
+    return sessionLooksReadyForClaimStatus(page, contentFrameSel);
+  }
+  return pageLooksLikePostMfaSession(page, contentFrameSel);
+}
+
+/**
+ * Open claim status app after login/MFA when landing on dashboard or navigation shell.
+ * @returns {Promise<boolean>}
+ */
+async function navigateToClaimStatusAfterLogin(page, av, logger, opts = {}) {
+  const claimUrl = String(av?.claimStatusAppUrl || '').trim();
+  const maxWaitMs = Number(opts.maxWaitMs) > 0 ? Number(opts.maxWaitMs) : 90000;
+  if (!claimUrl) return false;
+
+  if (await pageNeedsAvailityLogin(page)) {
+    logger?.info?.(
+      `Availity: skip claim status navigation — login page (url=${page.url()})`,
+    );
+    return false;
+  }
+
+  logger?.info?.(`Availity: navigating to claim status (${claimUrl})`);
+  await page.goto(claimUrl, { waitUntil: 'domcontentloaded', timeout: 120000 }).catch(() => {});
+  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});
+  await tryClickCookieConsent(page, logger);
+  logger?.info?.(`Availity: after claim status goto url=${page.url()}`);
+
+  if (await pageNeedsAvailityLogin(page)) {
+    logger?.info?.('Availity: claim status URL redirected to login — session expired');
+    return false;
+  }
+
+  const deadline = Date.now() + maxWaitMs;
+  let lastLog = 0;
+  while (Date.now() < deadline) {
+    if (await sessionLooksReadyForClaimStatus(page, av.contentFrameSelector)) {
+      logger?.info?.('Availity: claim status ready after navigation');
+      return true;
+    }
+    if (await pageNeedsAvailityLogin(page)) {
+      logger?.info?.('Availity: login appeared while waiting for claim status form');
+      return false;
+    }
+    if (Date.now() - lastLog > 5000) {
+      logger?.info?.(
+        `Availity: waiting for claim status form (${Math.round((deadline - Date.now()) / 1000)}s left, url=${page.url()})`,
+      );
+      lastLog = Date.now();
+    }
+    await sleep(1000);
+  }
+  logger?.warn?.(`Availity: claim status not ready after navigation (url=${page.url()})`);
+  return false;
+}
+
+/**
+ * Re-open claim status when cookies are valid but the form did not render yet.
+ * @returns {Promise<boolean>}
+ */
+async function tryRecoverClaimStatusSession(page, av, logger) {
+  const url = page.url();
+  if (await pageNeedsAvailityLogin(page)) {
+    logger?.info?.(
+      `Availity: skip claim status recovery — login required (url=${url})`,
+    );
+    return false;
+  }
+  if (!(await pageLooksLikeAuthenticatedAvailityShell(page))) {
+    logger?.info?.(
+      `Availity: skip claim status recovery — no authenticated shell (url=${url})`,
+    );
+    return false;
+  }
+  logger?.info?.(
+    `Availity: authenticated shell without claim form — retrying claim status URL (url=${url})`,
+  );
+  return navigateToClaimStatusAfterLogin(page, av, logger, { maxWaitMs: 25000 });
+}
+
 /**
  * After username/password: run MFA, but one-time code comes from our API (Redis) via getOtp().
  * onAwaitingOtp() is called the first time we detect a challenge.
  */
-async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp, getOtp }) {
-  if (await pageLooksLikePostMfaSession(page, av.contentFrameSelector)) {
+async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp, getOtp, targetApp = 'eligibility' }) {
+  if (await postMfaSessionReadyForApp(page, av.contentFrameSelector, targetApp)) {
     logger?.info?.('MFA: session already active before MFA step; skipping');
     return;
   }
@@ -427,7 +524,7 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
     }
   }
 
-  if (await pageLooksLikePostMfaSession(page, av.contentFrameSelector)) {
+  if (await postMfaSessionReadyForApp(page, av.contentFrameSelector, targetApp)) {
     logger?.info?.('MFA: session became active after method selection; skipping OTP');
     return;
   }
@@ -450,7 +547,7 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
       logger?.info?.('MFA: challenge visible without method step — will wait for code from app');
     } else {
       logger?.info?.('MFA: authenticator method UI not found — checking session');
-      if (await pageLooksLikePostMfaSession(page, av.contentFrameSelector)) return;
+      if (await postMfaSessionReadyForApp(page, av.contentFrameSelector, targetApp)) return;
     }
   }
 
@@ -462,7 +559,15 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
     'input#code,input[inputmode="numeric"],input[name="otp"],input[name="code"],input[autocomplete="one-time-code"],input[aria-label*="code" i],input[placeholder*="code" i]';
 
   const finishIfSessionReady = async () => {
-    if (await waitForAvailitySessionAfterMfa(page, av.contentFrameSelector, logger, 8000)) {
+    if (
+      await waitForAvailitySessionAfterMfa(
+        page,
+        av.contentFrameSelector,
+        logger,
+        8000,
+        targetApp,
+      )
+    ) {
       logger?.info?.('MFA: complete');
       await tryClickCookieConsent(page, logger);
       return true;
@@ -514,7 +619,7 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
       otpSubmitted = true;
       await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
       await page.waitForLoadState('networkidle', { timeout: 45000 }).catch(() => {});
-      if (await waitForAvailitySessionAfterMfa(page, av.contentFrameSelector, logger, 90000)) {
+      if (await waitForAvailitySessionAfterMfa(page, av.contentFrameSelector, logger, 90000, targetApp)) {
         logger?.info?.('MFA: complete after OTP');
         await tryClickCookieConsent(page, logger);
         return;
@@ -523,13 +628,19 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
     }
 
     if (otpSubmitted) {
-      if (await waitForAvailitySessionAfterMfa(page, av.contentFrameSelector, logger, 15000)) {
+      if (await waitForAvailitySessionAfterMfa(page, av.contentFrameSelector, logger, 15000, targetApp)) {
         logger?.info?.('MFA: complete (post-OTP, challenge cleared)');
         await tryClickCookieConsent(page, logger);
         return;
       }
-      if (await navigateToEligibilityAfterLogin(page, av, logger)) {
-        logger?.info?.('MFA: complete after eligibility navigation');
+      const navigated =
+        targetApp === 'claimStatus'
+          ? await navigateToClaimStatusAfterLogin(page, av, logger)
+          : await navigateToEligibilityAfterLogin(page, av, logger);
+      if (navigated) {
+        logger?.info?.(
+          `MFA: complete after ${targetApp === 'claimStatus' ? 'claim status' : 'eligibility'} navigation`,
+        );
         await tryClickCookieConsent(page, logger);
         return;
       }
@@ -539,7 +650,10 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
   }
 
   if (otpSubmitted) {
-    const navigated = await navigateToEligibilityAfterLogin(page, av, logger);
+    const navigated =
+      targetApp === 'claimStatus'
+        ? await navigateToClaimStatusAfterLogin(page, av, logger)
+        : await navigateToEligibilityAfterLogin(page, av, logger);
     if (navigated) {
       logger?.info?.('MFA: complete after timeout recovery navigation');
       return;
@@ -560,8 +674,12 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
  * @param {() => Promise<string>} opts.getOtp
  */
 async function availityLoginWithApiOtp(page, ctxLike, creds, logger, opts = {}) {
-  const { onAwaitingOtp, getOtp, skipInitialGoto = false } = opts;
+  const { onAwaitingOtp, getOtp, skipInitialGoto = false, targetApp = 'eligibility' } = opts;
   const av = ctxLike.config.availity;
+  const sessionReadyForApp =
+    targetApp === 'claimStatus'
+      ? () => sessionLooksReadyForClaimStatus(page, av.contentFrameSelector)
+      : () => sessionLooksReadyForEligibility(page, av.contentFrameSelector);
   const { loginUrl, username, password } = { loginUrl: av.loginUrl, username: creds.username, password: creds.password };
   const userSelectors =
     process.env.SEL_AVAILITY_USER ||
@@ -573,13 +691,17 @@ async function availityLoginWithApiOtp(page, ctxLike, creds, logger, opts = {}) 
     process.env.SEL_AVAILITY_SUBMIT ||
     'button[type="submit"],button:has-text("Sign In"),button:has-text("Log In"),button:has-text("Login")';
 
-  if (await sessionLooksReadyForEligibility(page, av.contentFrameSelector)) {
-    logger?.info?.('Availity: eligibility session already active on current page; skipping login');
+  if (await sessionReadyForApp()) {
+    logger?.info?.(
+      `Availity: ${targetApp} session already active on current page; skipping login`,
+    );
     return;
   }
 
   if (skipInitialGoto) {
-    logger?.info?.(`Availity login (API OTP): staying on ${page.url()} (eligibility probe did not find form yet)`);
+    logger?.info?.(
+      `Availity login (API OTP): staying on ${page.url()} (${targetApp} probe did not find form yet)`,
+    );
     await tryClickCookieConsent(page, logger);
     await sleep(800);
   } else {
@@ -589,14 +711,14 @@ async function availityLoginWithApiOtp(page, ctxLike, creds, logger, opts = {}) 
     await sleep(800);
   }
 
-  if (await pageLooksLikePostMfaSession(page, av.contentFrameSelector)) {
+  if (await postMfaSessionReadyForApp(page, av.contentFrameSelector, targetApp)) {
     logger?.info?.('Availity: already in session, skipping form');
     return;
   }
 
   await ensureAvailityLoginFormVisible(page, userSelectors, logger, loginUrl);
 
-  if (await pageLooksLikePostMfaSession(page, av.contentFrameSelector)) {
+  if (await postMfaSessionReadyForApp(page, av.contentFrameSelector, targetApp)) {
     logger?.info?.('Availity: session became valid during pre-login');
     return;
   }
@@ -608,7 +730,7 @@ async function availityLoginWithApiOtp(page, ctxLike, creds, logger, opts = {}) 
     await tryClickCookieConsent(page, logger);
     await sleep(800);
     await ensureAvailityLoginFormVisible(page, userSelectors, logger, loginUrl);
-    if (await pageLooksLikePostMfaSession(page, av.contentFrameSelector)) {
+    if (await postMfaSessionReadyForApp(page, av.contentFrameSelector, targetApp)) {
       logger?.info?.('Availity: session valid after opening login URL');
       return;
     }
@@ -618,7 +740,7 @@ async function availityLoginWithApiOtp(page, ctxLike, creds, logger, opts = {}) 
   }
 
   if (!visibleUserSel) {
-    if (await pageLooksLikePostMfaSession(page, av.contentFrameSelector)) {
+    if (await postMfaSessionReadyForApp(page, av.contentFrameSelector, targetApp)) {
       return;
     }
     throw new Error(`Availity login: user input not visible. URL=${page.url()}`);
@@ -630,17 +752,21 @@ async function availityLoginWithApiOtp(page, ctxLike, creds, logger, opts = {}) 
   await sleep(2000);
   await tryClickCookieConsent(page, logger);
 
-  if (await sessionLooksReadyForEligibility(page, av.contentFrameSelector)) {
+  if (await sessionReadyForApp()) {
     logger?.info?.('Availity: signed in without MFA challenge; skipping OTP');
     return;
   }
 
-  await availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp, getOtp });
+  await availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp, getOtp, targetApp });
   await sleep(1500);
   await tryClickCookieConsent(page, logger);
 
-  if (!(await sessionLooksReadyForEligibility(page, av.contentFrameSelector))) {
-    await navigateToEligibilityAfterLogin(page, av, logger);
+  if (!(await sessionReadyForApp())) {
+    if (targetApp === 'claimStatus') {
+      await navigateToClaimStatusAfterLogin(page, av, logger);
+    } else {
+      await navigateToEligibilityAfterLogin(page, av, logger);
+    }
   }
 }
 
@@ -650,7 +776,10 @@ module.exports = {
   pageNeedsAvailityLogin,
   isEligibilityFormVisible,
   sessionLooksReadyForEligibility,
+  sessionLooksReadyForClaimStatus,
   navigateToEligibilityAfterLogin,
+  navigateToClaimStatusAfterLogin,
   tryRecoverEligibilitySession,
+  tryRecoverClaimStatusSession,
   tryClickCookieConsent,
 };
