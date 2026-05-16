@@ -1,22 +1,28 @@
-const path = require('path');
-const fs = require('fs');
-const { pathToFileURL } = require('url');
-const { chromium } = require('playwright');
-const db = require('../config/db');
-const env = require('../config/env');
-const redis = require('../config/redis');
-const { buildAvailityConfig } = require('../config/availityConfigForUser');
-const { scrapeAppointmentsByDate } = require('../playwright/officeAllyClient');
-const { availityLoginWithApiOtp } = require('../playwright/availityOtpFlow');
+const path = require("path");
+const fs = require("fs");
+const { pathToFileURL } = require("url");
+const { chromium } = require("playwright");
+const db = require("../config/db");
+const env = require("../config/env");
+const redis = require("../config/redis");
+const { buildAvailityConfig } = require("../config/availityConfigForUser");
+const { scrapeAppointmentsByDate } = require("../playwright/officeAllyClient");
+const {
+  availityLoginWithApiOtp,
+  sessionLooksReadyForEligibility,
+  pageNeedsAvailityLogin,
+  tryRecoverEligibilitySession,
+  tryClickCookieConsent,
+} = require("../playwright/availityOtpFlow");
 const {
   openClaimStatusApp,
   isClaimStatusFormVisible,
   fillClaimStatusForm,
   submitClaimStatusSearch,
   processPaidRemittancesForClaim,
-} = require('../playwright/availityClaimStatusFlow');
-const { withAsyncTimeout } = require('../utils/withAsyncTimeout');
-const cacheService = require('./cacheService');
+} = require("../playwright/availityClaimStatusFlow");
+const { withAsyncTimeout } = require("../utils/withAsyncTimeout");
+const cacheService = require("./cacheService");
 
 /** Align Chromium's download folder with claim remittance save path (Playwright still uses download.saveAs). */
 async function trySetChromiumDownloadPath(context, page, absoluteDir) {
@@ -24,8 +30,8 @@ async function trySetChromiumDownloadPath(context, page, absoluteDir) {
   await fs.promises.mkdir(dir, { recursive: true });
   try {
     const session = await context.newCDPSession(page);
-    await session.send('Page.setDownloadBehavior', {
-      behavior: 'allow',
+    await session.send("Page.setDownloadBehavior", {
+      behavior: "allow",
       downloadPath: dir,
     });
   } catch {
@@ -39,25 +45,25 @@ function pickField(raw, pattern) {
 }
 
 function toIsoDate(v) {
-  const s = String(v || '').trim();
+  const s = String(v || "").trim();
   if (!s) return null;
   const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (iso) return s;
   const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
   if (us) {
-    const mm = us[1].padStart(2, '0');
-    const dd = us[2].padStart(2, '0');
+    const mm = us[1].padStart(2, "0");
+    const dd = us[2].padStart(2, "0");
     return `${us[3]}-${mm}-${dd}`;
   }
   return null;
 }
 
 function pickFirstNonEmpty(...values) {
-  return values.find((v) => String(v || '').trim()) || null;
+  return values.find((v) => String(v || "").trim()) || null;
 }
 
 function isMeaningfulText(v) {
-  return Boolean(String(v || '').trim());
+  return Boolean(String(v || "").trim());
 }
 
 function countEmptyInsuranceDbFields(rows) {
@@ -69,20 +75,26 @@ function countEmptyInsuranceDbFields(rows) {
 }
 
 function normalizeTextToken(v) {
-  return String(v || '')
+  return String(v || "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function buildSyntheticPatientKey(raw, index) {
-  const first = normalizeTextToken(raw['First Name'] || pickField(raw, /first\s*name/i));
-  const last = normalizeTextToken(raw['Last Name'] || pickField(raw, /last\s*name/i));
-  const dobIso = toIsoDate(raw['Date Of Birth'] || pickField(raw, /date\s*of\s*birth|dob/i));
-  const dob = normalizeTextToken(dobIso || '');
-  const rawPatient = normalizeTextToken(raw.RawPatient || '');
-  const appointmentId = normalizeTextToken(raw['Appointment ID'] || '');
-  const base = [first, last, dob].filter(Boolean).join('_');
+  const first = normalizeTextToken(
+    raw["First Name"] || pickField(raw, /first\s*name/i),
+  );
+  const last = normalizeTextToken(
+    raw["Last Name"] || pickField(raw, /last\s*name/i),
+  );
+  const dobIso = toIsoDate(
+    raw["Date Of Birth"] || pickField(raw, /date\s*of\s*birth|dob/i),
+  );
+  const dob = normalizeTextToken(dobIso || "");
+  const rawPatient = normalizeTextToken(raw.RawPatient || "");
+  const appointmentId = normalizeTextToken(raw["Appointment ID"] || "");
+  const base = [first, last, dob].filter(Boolean).join("_");
   if (base) return `synpid_${base}`;
   if (rawPatient && dob) return `synpid_${rawPatient}_${dob}`;
   if (rawPatient) return `synpid_${rawPatient}`;
@@ -92,8 +104,8 @@ function buildSyntheticPatientKey(raw, index) {
 
 function parseMoney(v) {
   if (v == null) return null;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  const s = String(v).replace(/,/g, '');
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const s = String(v).replace(/,/g, "");
   const m = s.match(/-?\d+(?:\.\d+)?/);
   if (!m) return null;
   const n = Number(m[0]);
@@ -105,67 +117,239 @@ function findFirstByKeyRegexDeep(value, regex, depth = 0) {
   if (Array.isArray(value)) {
     for (const item of value) {
       const hit = findFirstByKeyRegexDeep(item, regex, depth + 1);
-      if (hit != null && String(hit).trim() !== '') return hit;
+      if (hit != null && String(hit).trim() !== "") return hit;
     }
     return null;
   }
-  if (typeof value !== 'object') return null;
+  if (typeof value !== "object") return null;
   for (const [k, v] of Object.entries(value)) {
-    if (regex.test(String(k)) && v != null && String(v).trim() !== '') {
+    if (regex.test(String(k)) && v != null && String(v).trim() !== "") {
       return v;
     }
   }
   for (const nested of Object.values(value)) {
     const hit = findFirstByKeyRegexDeep(nested, regex, depth + 1);
-    if (hit != null && String(hit).trim() !== '') return hit;
+    if (hit != null && String(hit).trim() !== "") return hit;
   }
   return null;
 }
 
 function extractFinancialFields(resultRow, snap) {
-  const raw = (resultRow && resultRow.rawSnapshot) || (snap && snap.rawSnapshot) || snap || {};
+  const raw =
+    (resultRow && resultRow.rawSnapshot) ||
+    (snap && snap.rawSnapshot) ||
+    snap ||
+    {};
   const copayRaw =
     resultRow?.copayAmount ??
     resultRow?.copay ??
-    findFirstByKeyRegexDeep(raw, /(copay|co[_\s-]?pay|patient[_\s-]?responsibility)/i);
+    findFirstByKeyRegexDeep(
+      raw,
+      /(copay|co[_\s-]?pay|patient[_\s-]?responsibility)/i,
+    );
+  const adRow = raw.annualDeductibleRow;
   const deductibleRaw =
-    resultRow?.deductibleAmount ??
-    resultRow?.deductible ??
-    findFirstByKeyRegexDeep(raw, /(deductible)/i);
+    adRow?.totalAmount != null && Number.isFinite(Number(adRow.totalAmount))
+      ? Number(adRow.totalAmount)
+      : resultRow?.annualDeductibleTotal ??
+        resultRow?.deductibleAmount ??
+        resultRow?.deductible ??
+        findFirstByKeyRegexDeep(raw, /(deductible)/i);
   const coinsuranceRaw =
     resultRow?.coinsurance ??
     findFirstByKeyRegexDeep(raw, /(coinsurance|co[_\s-]?insurance)/i);
+  const oopRow = raw.outOfPocketRow;
   const oopRaw =
-    resultRow?.oopRemaining ??
-    resultRow?.outOfPocketRemaining ??
-    findFirstByKeyRegexDeep(raw, /(oop[_\s-]?remaining|out[_\s-]?of[_\s-]?pocket.*remaining|remaining.*out[_\s-]?of[_\s-]?pocket)/i);
+    oopRow?.remainingAmount != null && Number.isFinite(Number(oopRow.remainingAmount))
+      ? Number(oopRow.remainingAmount)
+      : resultRow?.oopRemaining ??
+        resultRow?.outOfPocketRemaining ??
+        findFirstByKeyRegexDeep(
+          raw,
+          /(oop[_\s-]?remaining|out[_\s-]?of[_\s-]?pocket.*remaining|remaining.*out[_\s-]?of[_\s-]?pocket)/i,
+        );
 
   return {
     copayAmount: parseMoney(copayRaw),
     deductibleAmount: parseMoney(deductibleRaw),
-    coinsurance: coinsuranceRaw == null ? null : String(coinsuranceRaw).trim() || null,
+    coinsurance:
+      coinsuranceRaw == null ? null : String(coinsuranceRaw).trim() || null,
     oopRemaining: parseMoney(oopRaw),
+    annualDeductibleNetwork:
+      resultRow?.annualDeductibleNetwork ?? adRow?.network ?? null,
+    annualDeductibleTotalAmount:
+      resultRow?.annualDeductibleTotal != null &&
+      Number.isFinite(Number(resultRow.annualDeductibleTotal))
+        ? Number(resultRow.annualDeductibleTotal)
+        : adRow?.totalAmount != null && Number.isFinite(Number(adRow.totalAmount))
+          ? Number(adRow.totalAmount)
+          : null,
+    annualDeductibleMetAmount:
+      resultRow?.annualDeductibleMet != null &&
+      Number.isFinite(Number(resultRow.annualDeductibleMet))
+        ? Number(resultRow.annualDeductibleMet)
+        : adRow?.metAmount != null && Number.isFinite(Number(adRow.metAmount))
+          ? Number(adRow.metAmount)
+          : null,
+    annualDeductibleRemainingAmount:
+      resultRow?.annualDeductibleRemaining != null &&
+      Number.isFinite(Number(resultRow.annualDeductibleRemaining))
+        ? Number(resultRow.annualDeductibleRemaining)
+        : adRow?.remainingAmount != null &&
+            Number.isFinite(Number(adRow.remainingAmount))
+          ? Number(adRow.remainingAmount)
+          : null,
   };
 }
 
 function buildAppointmentStart(appointmentDate, timeValue) {
-  const time = String(timeValue || '').trim();
+  const time = String(timeValue || "").trim();
   if (!time) return null;
   const normalized = /^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$/i.exec(time);
   if (!normalized) return null;
   let hour = Number(normalized[1]);
   const minute = Number(normalized[2]);
-  const meridian = normalized[3] ? normalized[3].toUpperCase() : '';
-  if (meridian === 'PM' && hour < 12) hour += 12;
-  if (meridian === 'AM' && hour === 12) hour = 0;
-  return `${appointmentDate}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
+  const meridian = normalized[3] ? normalized[3].toUpperCase() : "";
+  if (meridian === "PM" && hour < 12) hour += 12;
+  if (meridian === "AM" && hour === 12) hour = 0;
+  return `${appointmentDate}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`;
 }
 
 function createLogger() {
   return {
-    info: (...a) => console.log('[sync]', ...a),
-    warn: (...a) => console.warn('[sync]', ...a),
-    step: (a, b) => console.log('[sync]', a, b),
+    info: (...a) => console.log("[sync]", ...a),
+    warn: (...a) => console.warn("[sync]", ...a),
+    step: (a, b) => console.log("[sync]", a, b),
+  };
+}
+
+/** Availity sometimes lands on `#/navigation` with no iframe until eligibility URL is re-opened. */
+function isAvailityNavigationShellRoot(url) {
+  return /\/static\/web\/onb\/onboarding-ui-apps\/navigation\/#\/?$/i.test(
+    String(url || "").split("?")[0],
+  );
+}
+
+/**
+ * Eligibility run artifacts (PNG + HTML, may contain PHI).
+ * - On if `AVAILITY_ELIGIBILITY_RESULT_CAPTURE` is true/1/yes/on, OR
+ * - On if `AVAILITY_ELIGIBILITY_RESULT_DIR` is non-empty (setting a path alone opts in).
+ * - Off only when `AVAILITY_ELIGIBILITY_RESULT_CAPTURE` is explicitly false/0/no/off.
+ */
+function isEligibilityResultCaptureEnabled() {
+  const cap = String(process.env.AVAILITY_ELIGIBILITY_RESULT_CAPTURE || "")
+    .trim()
+    .toLowerCase();
+  if (["0", "false", "no", "off"].includes(cap)) return false;
+  const dir = String(process.env.AVAILITY_ELIGIBILITY_RESULT_DIR || "").trim();
+  if (dir) return true;
+  return ["1", "true", "yes", "on"].includes(cap);
+}
+
+/**
+ * Persist visual + DOM artifacts for one eligibility inquiry (PHI — keep directory gitignored).
+ * @returns {Promise<{ screenshotPath: string, iframeHtmlPath: string | null, iframeDocumentPngPath: string | null, iframeWidgetPngPath: string | null } | null>}
+ */
+async function captureAvailityEligibilityCheckArtifacts({
+  page,
+  frame,
+  syncId,
+  elRunId,
+  patientId,
+  outcome,
+  logger,
+  contentFrameSelector = "iframe#newBodyFrame",
+}) {
+  if (!isEligibilityResultCaptureEnabled()) return null;
+  if (!page) return null;
+
+  const relOrAbs = String(process.env.AVAILITY_ELIGIBILITY_RESULT_DIR || "").trim();
+  const subdir = syncId ? String(syncId) : "adhoc";
+  const baseDir = relOrAbs
+    ? path.isAbsolute(relOrAbs)
+      ? path.join(relOrAbs, subdir)
+      : path.resolve(process.cwd(), relOrAbs, subdir)
+    : path.resolve(process.cwd(), "availity", "eligibility-results", subdir);
+
+  await fs.promises.mkdir(baseDir, { recursive: true });
+  const slugPatient = String(patientId || "unknown").replace(/[^a-zA-Z0-9-_]/g, "_");
+  const base = `elig-${outcome}-${slugPatient}-${elRunId}`;
+  const screenshotPath = path.join(baseDir, `${base}-full.png`);
+  const iframeHtmlPath = path.join(baseDir, `${base}-iframe.html`);
+  const iframePngPath = path.join(baseDir, `${base}-iframe-document.png`);
+  const iframeWidgetPngPath = path.join(baseDir, `${base}-iframe-widget.png`);
+
+  try {
+    // Full scroll height of the top-level Essentials shell (outer page).
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+  } catch (err) {
+    logger?.warn?.(
+      `Availity eligibility capture: full-page screenshot failed: ${err?.message || err}`,
+    );
+  }
+
+  const sel = String(contentFrameSelector || "iframe#newBodyFrame").trim();
+  let wroteIframeWidget = false;
+  try {
+    const iframeLoc = page.locator(sel).first();
+    if (await iframeLoc.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await iframeLoc.screenshot({ path: iframeWidgetPngPath, animations: "disabled" });
+      wroteIframeWidget = true;
+    }
+  } catch (err) {
+    logger?.warn?.(
+      `Availity eligibility capture: iframe widget screenshot failed: ${err?.message || err}`,
+    );
+  }
+
+  let wroteHtml = false;
+  let wroteIframeDocPng = false;
+  if (frame) {
+    try {
+      const html = await frame.evaluate(() => {
+        try {
+          return document.documentElement
+            ? document.documentElement.outerHTML
+            : "";
+        } catch {
+          return "";
+        }
+      });
+      if (html) {
+        await fs.promises.writeFile(iframeHtmlPath, html, "utf8");
+        wroteHtml = true;
+      }
+    } catch (err) {
+      logger?.warn?.(
+        `Availity eligibility capture: iframe HTML failed: ${err?.message || err}`,
+      );
+    }
+    try {
+      const root = frame.locator("html").first();
+      if (await root.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await root.screenshot({ path: iframePngPath, animations: "disabled" });
+        wroteIframeDocPng = true;
+      }
+    } catch (err) {
+      logger?.warn?.(
+        `Availity eligibility capture: iframe document screenshot failed: ${err?.message || err}`,
+      );
+    }
+  }
+
+  const parts = [screenshotPath];
+  if (wroteIframeDocPng) parts.push(iframePngPath);
+  if (wroteIframeWidget) parts.push(iframeWidgetPngPath);
+  if (wroteHtml) parts.push(iframeHtmlPath);
+
+  logger?.info?.(
+    `Availity eligibility capture (${outcome}): ${parts.join(" | ")}`,
+  );
+  return {
+    screenshotPath,
+    iframeHtmlPath: wroteHtml ? iframeHtmlPath : null,
+    iframeDocumentPngPath: wroteIframeDocPng ? iframePngPath : null,
+    iframeWidgetPngPath: wroteIframeWidget ? iframeWidgetPngPath : null,
   };
 }
 
@@ -175,21 +359,78 @@ async function loadEligibilityScraper() {
   if (rel) {
     const resolved = path.isAbsolute(rel) ? rel : path.join(process.cwd(), rel);
     candidates.push(resolved);
-    candidates.push(path.join(resolved, 'eligibilityScraper.js'));
-    candidates.push(path.join(resolved, 'src', 'eligibilityScraper.js'));
+    candidates.push(path.join(resolved, "eligibilityScraper.js"));
+    candidates.push(path.join(resolved, "src", "eligibilityScraper.js"));
   }
   candidates.push(
-    path.join(process.cwd(), 'availity', 'src', 'eligibilityScraper.js'),
-    path.join(process.cwd(), 'scripts', 'availity', 'src', 'eligibilityScraper.js'),
-    path.join(process.cwd(), '..', 'availity', 'src', 'eligibilityScraper.js'),
-    path.join(__dirname, '..', '..', 'availity', 'src', 'eligibilityScraper.js'),
-    path.join(__dirname, '..', '..', 'scripts', 'availity', 'src', 'eligibilityScraper.js'),
-    path.join(__dirname, '..', '..', '..', 'availity', 'src', 'eligibilityScraper.js'),
+    path.join(process.cwd(), "availity", "src", "eligibilityScraper.js"),
+    path.join(
+      process.cwd(),
+      "scripts",
+      "availity",
+      "src",
+      "eligibilityScraper.js",
+    ),
+    path.join(process.cwd(), "..", "availity", "src", "eligibilityScraper.js"),
+    path.join(
+      __dirname,
+      "..",
+      "..",
+      "availity",
+      "src",
+      "eligibilityScraper.js",
+    ),
+    path.join(
+      __dirname,
+      "..",
+      "..",
+      "scripts",
+      "availity",
+      "src",
+      "eligibilityScraper.js",
+    ),
+    path.join(
+      __dirname,
+      "..",
+      "..",
+      "..",
+      "availity",
+      "src",
+      "eligibilityScraper.js",
+    ),
   );
   const absolute = candidates.find((p) => fs.existsSync(p));
   if (!absolute) {
     throw new Error(
-      `Eligibility scraper not found. Checked: ${candidates.join(', ')}`,
+      `Eligibility scraper not found. Checked: ${candidates.join(", ")}`,
+    );
+  }
+  return import(pathToFileURL(absolute).href);
+}
+
+async function loadAvailityEligibilityRepo() {
+  const candidates = [
+    path.join(
+      process.cwd(),
+      "availity",
+      "src",
+      "repos",
+      "availityEligibilityRepo.js",
+    ),
+    path.join(
+      __dirname,
+      "..",
+      "..",
+      "availity",
+      "src",
+      "repos",
+      "availityEligibilityRepo.js",
+    ),
+  ];
+  const absolute = candidates.find((p) => fs.existsSync(p));
+  if (!absolute) {
+    throw new Error(
+      `Availity eligibility repo not found. Checked: ${candidates.join(", ")}`,
     );
   }
   return import(pathToFileURL(absolute).href);
@@ -206,16 +447,24 @@ async function getOtpFromRedis(syncId) {
       return String(v).trim();
     }
     if (Date.now() > deadline) {
-      throw new Error('OTP not received in time (15m)');
+      throw new Error("OTP not received in time (15m)");
     }
     await new Promise((r) => setTimeout(r, 1000));
   }
 }
 
-async function listPrimaryInsuranceForUser(userId, limit, appointmentDate = null, ids = {}) {
-  const patientIds = ids.patientIds && ids.patientIds.length ? ids.patientIds : null;
-  const appointmentIds = ids.appointmentIds && ids.appointmentIds.length ? ids.appointmentIds : null;
-  const insuranceIds = ids.insuranceIds && ids.insuranceIds.length ? ids.insuranceIds : null;
+async function listPrimaryInsuranceForUser(
+  userId,
+  limit,
+  appointmentDate = null,
+  ids = {},
+) {
+  const patientIds =
+    ids.patientIds && ids.patientIds.length ? ids.patientIds : null;
+  const appointmentIds =
+    ids.appointmentIds && ids.appointmentIds.length ? ids.appointmentIds : null;
+  const insuranceIds =
+    ids.insuranceIds && ids.insuranceIds.length ? ids.insuranceIds : null;
   const { rows } = await db.query(
     `SELECT
         p.id AS patient_id,
@@ -315,7 +564,9 @@ async function getEligibilityQueueDiagnostics(userId, appointmentDate) {
     appointmentsOnDate: Number(r.appointments_on_date || 0),
     patientsOnDate: Number(r.patients_on_date || 0),
     patientsWithDob: Number(r.patients_with_dob || 0),
-    patientsWithPrimaryInsurance: Number(r.patients_with_primary_insurance || 0),
+    patientsWithPrimaryInsurance: Number(
+      r.patients_with_primary_insurance || 0,
+    ),
     patientsWithMemberId: Number(r.patients_with_member_id || 0),
     patientsWithPayerName: Number(r.patients_with_payer_name || 0),
     fullyEligiblePatients: Number(r.fully_eligible_patients || 0),
@@ -411,7 +662,7 @@ async function insertClaimRemittanceFile({
         claimRow.service_start_date ?? null,
         claimRow.service_end_date ?? null,
         claimRow.visit_count ?? 0,
-        'paid',
+        "paid",
         file.filePath,
         file.fileName,
         downloadTime,
@@ -482,9 +733,9 @@ async function listOfficeAllySavedIdsForDate(userId, appointmentDate) {
 }
 
 function sanitizeForFileName(value) {
-  return String(value || 'unknown')
+  return String(value || "unknown")
     .trim()
-    .replace(/[^a-zA-Z0-9_-]/g, '_');
+    .replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
 /**
@@ -494,15 +745,22 @@ function sanitizeForFileName(value) {
  * - templates with {userId}
  */
 function resolveAvailityStorageStatePath(storageStatePath, userId) {
-  const raw = String(storageStatePath || '').trim();
-  if (!raw) return '';
+  const raw = String(storageStatePath || "").trim();
+  if (!raw) return "";
   const withUser = raw.replace(/\{userId\}/g, sanitizeForFileName(userId));
   const ext = path.extname(withUser).toLowerCase();
-  if (ext === '.json') {
-    return path.isAbsolute(withUser) ? withUser : path.resolve(process.cwd(), withUser);
+  if (ext === ".json") {
+    return path.isAbsolute(withUser)
+      ? withUser
+      : path.resolve(process.cwd(), withUser);
   }
-  const asDir = path.isAbsolute(withUser) ? withUser : path.resolve(process.cwd(), withUser);
-  return path.join(asDir, `availity-session-${sanitizeForFileName(userId)}.json`);
+  const asDir = path.isAbsolute(withUser)
+    ? withUser
+    : path.resolve(process.cwd(), withUser);
+  return path.join(
+    asDir,
+    `availity-session-${sanitizeForFileName(userId)}.json`,
+  );
 }
 
 /**
@@ -514,7 +772,10 @@ async function bulkPersistOfficeAllyScrape(p) {
   const { userId, syncId, appointmentDate, rawAppointments } = p;
   const n = rawAppointments.length;
   if (n === 0) {
-    return { savedAppointments: 0, ids: { patients: [], appointments: [], insurance: [] } };
+    return {
+      savedAppointments: 0,
+      ids: { patients: [], appointments: [], insurance: [] },
+    };
   }
   // eslint-disable-next-line no-console
   console.log(`[date-sync] persist start rows=${n} syncId=${syncId}`);
@@ -537,17 +798,26 @@ async function bulkPersistOfficeAllyScrape(p) {
     const details = raw.patientDetails || {};
     const pTab = details.patientTab || {};
     const extractedPmPatientId =
-      raw['Patient ID'] ||
+      raw["Patient ID"] ||
       pTab.patientId ||
       pickField(raw, /patient\s*id|account|acct|mrn|chart/i);
-    const pmPatientId = String(extractedPmPatientId || buildSyntheticPatientKey(raw, i));
+    const pmPatientId = String(
+      extractedPmPatientId || buildSyntheticPatientKey(raw, i),
+    );
     if (!extractedPmPatientId) missingPmPatientIdCount += 1;
     const firstName = pTab.firstName || pickField(raw, /first\s*name/i);
     const lastName = pTab.lastName || pickField(raw, /last\s*name/i);
-    const dobIso = toIsoDate(pTab.dob || raw['Date Of Birth'] || pickField(raw, /date\s*of\s*birth|dob/i));
-    const phonePrimary = pTab.cellPhone || pTab.homePhone || pTab.workPhone || null;
+    const dobIso = toIsoDate(
+      pTab.dob ||
+        raw["Date Of Birth"] ||
+        pickField(raw, /date\s*of\s*birth|dob/i),
+    );
+    const phonePrimary =
+      pTab.cellPhone || pTab.homePhone || pTab.workPhone || null;
     const email = pTab.email || null;
-    const pmAppointmentId = String(raw['Appointment ID'] || `syn-${appointmentDate}-${pmPatientId}-${i}`);
+    const pmAppointmentId = String(
+      raw["Appointment ID"] || `syn-${appointmentDate}-${pmPatientId}-${i}`,
+    );
     const startsAt = buildAppointmentStart(appointmentDate, raw.Time);
     pmPids.push(pmPatientId);
     firsts.push(firstName);
@@ -572,7 +842,7 @@ async function bulkPersistOfficeAllyScrape(p) {
 
   const client = await db.getClient();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
     // eslint-disable-next-line no-console
     console.log(`[date-sync] upserting patients rows=${n}`);
     const { rows: pOut } = await client.query(
@@ -594,7 +864,17 @@ async function bulkPersistOfficeAllyScrape(p) {
         raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING id, user_id, pm_patient_id`,
-      [Array(n).fill(userId), pmPids, firsts, lasts, dobs, phones, emails, raws, ords],
+      [
+        Array(n).fill(userId),
+        pmPids,
+        firsts,
+        lasts,
+        dobs,
+        phones,
+        emails,
+        raws,
+        ords,
+      ],
     );
     const byPm = new Map(pOut.map((r) => [r.pm_patient_id, r.id]));
     const patientIds = pmPids.map((pm) => {
@@ -659,15 +939,25 @@ async function bulkPersistOfficeAllyScrape(p) {
     const seenInsurance = new Set();
     const seenVisits = new Set();
     const appendInsurance = (patientId, rank, source) => {
-      if (!source || typeof source !== 'object') return;
+      if (!source || typeof source !== "object") return;
       const dedupeKey = `${patientId}:${rank}`;
       if (seenInsurance.has(dedupeKey)) return;
       seenInsurance.add(dedupeKey);
-      const payerName = pickFirstNonEmpty(source.insuranceName, source.payerName);
-      const memberId = pickFirstNonEmpty(source.subscriberId, source.insuredId, source.memberId);
+      const payerName = pickFirstNonEmpty(
+        source.insuranceName,
+        source.payerName,
+      );
+      const memberId = pickFirstNonEmpty(
+        source.subscriberId,
+        source.insuredId,
+        source.memberId,
+      );
       const planName = pickFirstNonEmpty(source.planName);
       const groupNo = pickFirstNonEmpty(source.groupNo, source.groupNumber);
-      const relationship = pickFirstNonEmpty(source.relationshipToInsured, source.relationship);
+      const relationship = pickFirstNonEmpty(
+        source.relationshipToInsured,
+        source.relationship,
+      );
       insPatientIds.push(patientId);
       insRanks.push(rank);
       insPayerNames.push(payerName);
@@ -692,7 +982,7 @@ async function bulkPersistOfficeAllyScrape(p) {
         ? raw.patientDetails.patientVisits
         : [];
       for (const visit of visits) {
-        const pmVisitId = String(visit?.pmVisitId || '').trim();
+        const pmVisitId = String(visit?.pmVisitId || "").trim();
         if (!pmVisitId) continue;
         const visitKey = `${userId}:${pmVisitId}`;
         if (seenVisits.has(visitKey)) continue;
@@ -701,16 +991,16 @@ async function bulkPersistOfficeAllyScrape(p) {
         visitPatientIds.push(patientId);
         visitPmVisitIds.push(pmVisitId);
         visitDates.push(toIsoDate(visit?.visitDate));
-        visitTypes.push(String(visit?.visitType || '').trim() || null);
-        visitProviders.push(String(visit?.providerName || '').trim() || null);
-        visitStatuses.push(String(visit?.status || '').trim() || null);
+        visitTypes.push(String(visit?.visitType || "").trim() || null);
+        visitProviders.push(String(visit?.providerName || "").trim() || null);
+        visitStatuses.push(String(visit?.status || "").trim() || null);
         visitCharges.push(
-          typeof visit?.charges === 'number' && Number.isFinite(visit.charges)
+          typeof visit?.charges === "number" && Number.isFinite(visit.charges)
             ? visit.charges
             : null,
         );
         visitBalances.push(
-          typeof visit?.balance === 'number' && Number.isFinite(visit.balance)
+          typeof visit?.balance === "number" && Number.isFinite(visit.balance)
             ? visit.balance
             : null,
         );
@@ -743,7 +1033,9 @@ async function bulkPersistOfficeAllyScrape(p) {
     let insuranceOut = [];
     if (insPatientIds.length) {
       // eslint-disable-next-line no-console
-      console.log(`[date-sync] upserting insurance rows=${insPatientIds.length}`);
+      console.log(
+        `[date-sync] upserting insurance rows=${insPatientIds.length}`,
+      );
       const { rows } = await client.query(
         `INSERT INTO patient_insurance
           (patient_id, coverage_rank, payer_name, member_id, plan_name, group_number, relationship, raw_payload)
@@ -759,7 +1051,16 @@ async function bulkPersistOfficeAllyScrape(p) {
            raw_payload = EXCLUDED.raw_payload,
            updated_at = NOW()
          RETURNING id, patient_id, coverage_rank`,
-        [insPatientIds, insRanks, insPayerNames, insMemberIds, insPlanNames, insGroupNos, insRelationships, insRaw],
+        [
+          insPatientIds,
+          insRanks,
+          insPayerNames,
+          insMemberIds,
+          insPlanNames,
+          insGroupNos,
+          insRelationships,
+          insRaw,
+        ],
       );
       insuranceOut = rows;
     }
@@ -767,7 +1068,9 @@ async function bulkPersistOfficeAllyScrape(p) {
     let patientVisitsOut = [];
     if (visitPmVisitIds.length) {
       // eslint-disable-next-line no-console
-      console.log(`[date-sync] upserting patient visits rows=${visitPmVisitIds.length}`);
+      console.log(
+        `[date-sync] upserting patient visits rows=${visitPmVisitIds.length}`,
+      );
       const { rows } = await client.query(
         `INSERT INTO patient_visits
           (user_id, patient_id, pm_visit_id, visit_date, visit_type, provider_name, status, charges, balance, raw_payload)
@@ -801,8 +1104,8 @@ async function bulkPersistOfficeAllyScrape(p) {
       patientVisitsOut = rows;
     }
     // eslint-disable-next-line no-console
-    console.log('[date-sync] committing office ally transaction');
-    await client.query('COMMIT');
+    console.log("[date-sync] committing office ally transaction");
+    await client.query("COMMIT");
     // eslint-disable-next-line no-console
     console.log(`[date-sync] persist done rows=${n} syncId=${syncId}`);
     return {
@@ -834,7 +1137,7 @@ async function bulkPersistOfficeAllyScrape(p) {
     // eslint-disable-next-line no-console
     console.error(`[date-sync] persist failed syncId=${syncId}`, e);
     try {
-      await client.query('ROLLBACK');
+      await client.query("ROLLBACK");
     } catch {
       /* */
     }
@@ -844,9 +1147,16 @@ async function bulkPersistOfficeAllyScrape(p) {
   }
 }
 
-async function runOfficeAllyStage({ userId, appointmentDate, syncId, officeAllyCreds }) {
+async function runOfficeAllyStage({
+  userId,
+  appointmentDate,
+  syncId,
+  officeAllyCreds,
+}) {
   // eslint-disable-next-line no-console
-  console.log(`[date-sync] office ally stage start syncId=${syncId} date=${appointmentDate}`);
+  console.log(
+    `[date-sync] office ally stage start syncId=${syncId} date=${appointmentDate}`,
+  );
   await db.query(
     "UPDATE sync_requests SET status = 'running', current_stage = 'office_ally', message = 'Office Ally: starting', started_at = COALESCE(started_at, NOW()) WHERE id = $1",
     [syncId],
@@ -859,10 +1169,12 @@ async function runOfficeAllyStage({ userId, appointmentDate, syncId, officeAllyC
       officeAllyPassword: officeAllyCreds.password,
     }),
     Math.max(env.officeAlly.scrapeTimeoutMs, 120000),
-    { label: 'office_ally_scrape' },
+    { label: "office_ally_scrape" },
   );
   // eslint-disable-next-line no-console
-  console.log(`[date-sync] scrape done rows=${rawAppointments.length} syncId=${syncId}`);
+  console.log(
+    `[date-sync] scrape done rows=${rawAppointments.length} syncId=${syncId}`,
+  );
   await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
     syncId,
     `Office Ally: scraped ${rawAppointments.length} rows, persisting to DB`,
@@ -876,18 +1188,27 @@ async function runOfficeAllyStage({ userId, appointmentDate, syncId, officeAllyC
       rawAppointments,
     }),
     Math.max(env.pg.statementTimeoutMs * 2, 60000),
-    { label: 'office_ally_persist' },
+    { label: "office_ally_persist" },
   );
   const { savedAppointments, ids } = persistResult;
   // eslint-disable-next-line no-console
-  console.log(`[date-sync] db save done saved=${savedAppointments} syncId=${syncId}`);
+  console.log(
+    `[date-sync] db save done saved=${savedAppointments} syncId=${syncId}`,
+  );
 
   // eslint-disable-next-line no-console
   console.log(`[date-sync] office ally stage done syncId=${syncId}`);
   return { rawAppointments, savedAppointments, ids };
 }
 
-async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate = null, ids = {}, officeAllySavedAppointments = null }) {
+async function runAvailityStage({
+  userId,
+  syncId,
+  availityCreds,
+  appointmentDate = null,
+  ids = {},
+  officeAllySavedAppointments = null,
+}) {
   const logger = createLogger();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const scraper = await loadEligibilityScraper();
@@ -897,23 +1218,41 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
   });
   const ctx = { config: avConfig, logger, browser: {} };
 
-  const stageMessage = officeAllySavedAppointments == null
-    ? 'Availity: starting'
-    : `Office Ally: saved ${officeAllySavedAppointments} appointments. Availity: starting`;
+  const stageMessage =
+    officeAllySavedAppointments == null
+      ? "Availity: starting"
+      : `Office Ally: saved ${officeAllySavedAppointments} appointments. Availity: starting`;
   await db.query(
     "UPDATE sync_requests SET status = 'running', current_stage = 'availity', message = $2 WHERE id = $1",
     [syncId, stageMessage],
   );
 
-  const storageStatePath = resolveAvailityStorageStatePath(avConfig.availity.storageStatePath, userId);
-  const headless = String(process.env.HEADLESS || 'true').toLowerCase() === 'true';
+  const storageStatePath = resolveAvailityStorageStatePath(
+    avConfig.availity.storageStatePath,
+    userId,
+  );
+  const headless =
+    String(process.env.HEADLESS || "true").toLowerCase() === "true";
   const slowMo = Number(process.env.SLOW_MO_MS || 0);
-  const browser = await chromium.launch({ headless, slowMo: slowMo || undefined });
-  const hasStoredState = Boolean(storageStatePath) && (await fs.promises.stat(storageStatePath).then(() => true).catch(() => false));
-  const contextOpts = { viewport: { width: 1400, height: 900 }, acceptDownloads: true };
+  const browser = await chromium.launch({
+    headless,
+    slowMo: slowMo || undefined,
+  });
+  const hasStoredState =
+    Boolean(storageStatePath) &&
+    (await fs.promises
+      .stat(storageStatePath)
+      .then(() => true)
+      .catch(() => false));
+  const contextOpts = {
+    viewport: { width: 1400, height: 900 },
+    acceptDownloads: true,
+  };
   if (hasStoredState) {
     contextOpts.storageState = storageStatePath;
-    logger.info(`Availity: loading saved Playwright storage state from ${storageStatePath}`);
+    logger.info(
+      `Availity: loading saved Playwright storage state from ${storageStatePath}`,
+    );
   }
   const context = await browser.newContext(contextOpts);
   const page = await context.newPage();
@@ -924,60 +1263,166 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
     },
     async saveStorageState() {
       if (!storageStatePath) return;
-      await fs.promises.mkdir(path.dirname(storageStatePath), { recursive: true });
+      await fs.promises.mkdir(path.dirname(storageStatePath), {
+        recursive: true,
+      });
       await context.storageState({ path: storageStatePath });
-      logger.info(`Availity: saved Playwright storage state to ${storageStatePath}`);
+      logger.info(
+        `Availity: saved Playwright storage state to ${storageStatePath}`,
+      );
     },
     async screenshot(name) {
-      if (String(process.env.AVAILITY_SCREENSHOTS || '').toLowerCase() !== 'true') return;
-      const dir = path.resolve(process.cwd(), 'availity', 'screenshots');
+      if (
+        String(process.env.AVAILITY_SCREENSHOTS || "").toLowerCase() !== "true"
+      )
+        return;
+      const dir = path.resolve(process.cwd(), "availity", "screenshots");
       await fs.promises.mkdir(dir, { recursive: true });
       const file = path.join(dir, `${name}-${Date.now()}.png`);
-      await this.page.screenshot({ path: file, fullPage: true }).catch(() => {});
+      await this.page
+        .screenshot({ path: file, fullPage: true })
+        .catch(() => {});
       logger.info(`Availity screenshot: ${file}`);
     },
   };
 
   try {
-    await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
-      syncId,
-      hasStoredState
-        ? 'Availity: restoring saved session'
-        : 'Availity: logging in',
-    ]);
-    await availityLoginWithApiOtp(page, ctx, availityCreds, logger, {
-      onAwaitingOtp: async () => {
-        await db.query(
-          "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity', message = $2 WHERE id = $1",
-          [syncId, 'Availity MFA required: enter OTP code to continue'],
+    let sessionReady = false;
+    if (hasStoredState) {
+      await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
+        syncId,
+        "Availity: checking saved session on eligibility app",
+      ]);
+      const eligUrl = avConfig.availity.eligibilityAppUrl;
+      logger.info(`Availity: probing session via eligibility (${eligUrl})`);
+      await page
+        .goto(eligUrl, { waitUntil: "domcontentloaded", timeout: 180000 })
+        .catch(() => {});
+      await page
+        .waitForLoadState("networkidle", { timeout: 30000 })
+        .catch(() => {});
+      await tryClickCookieConsent(page, logger);
+      await sleep(600);
+      logger.info(`Availity: session probe initial url=${page.url()}`);
+      if (isAvailityNavigationShellRoot(page.url())) {
+        logger.warn(
+          `Availity: navigation shell root after open; reloading eligibility URL`,
         );
-      },
-      getOtp: async () => {
-        const code = await getOtpFromRedis(syncId);
-        await db.query(
-          "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity', message = $2 WHERE id = $1",
-          [syncId, 'Availity OTP received, validating code'],
+        await page
+          .goto(eligUrl, { waitUntil: "domcontentloaded", timeout: 180000 })
+          .catch(() => {});
+        await page
+          .waitForLoadState("networkidle", { timeout: 30000 })
+          .catch(() => {});
+        await tryClickCookieConsent(page, logger);
+        logger.info(`Availity: session probe after reload url=${page.url()}`);
+      }
+      const sessionProbeDeadline = Date.now() + 45000;
+      while (Date.now() < sessionProbeDeadline) {
+        if (await pageNeedsAvailityLogin(page)) {
+          logger.info(
+            `Availity: session probe — login required, stored session expired (url=${page.url()})`,
+          );
+          break;
+        }
+        sessionReady = await sessionLooksReadyForEligibility(
+          page,
+          avConfig.availity.contentFrameSelector,
         );
-        return code;
-      },
-    });
-    await ctx.browser.saveStorageState?.();
-    await db.query("UPDATE sync_requests SET status = 'running', current_stage = 'availity', message = $2 WHERE id = $1", [
-      syncId,
-      'Availity MFA complete, continuing',
-    ]);
+        if (sessionReady) break;
+        await sleep(1000);
+      }
+      if (sessionReady) {
+        logger.info(
+          "Availity: saved session works on eligibility — skipping login / OTP",
+        );
+      } else {
+        logger.info(
+          "Availity: eligibility app did not load with saved session; will use login flow",
+        );
+        const recovered = await tryRecoverEligibilitySession(
+          page,
+          avConfig.availity,
+          logger,
+        );
+        if (recovered) {
+          sessionReady = true;
+          logger.info(
+            "Availity: saved session recovered after eligibility re-open — skipping login / OTP",
+          );
+        }
+      }
+    }
 
-    await db.query("UPDATE sync_requests SET status = 'running', current_stage = 'availity', message = $2 WHERE id = $1", [
-      syncId,
-      'Availity: opening eligibility and processing queue',
-    ]);
+    if (!sessionReady) {
+      sessionReady = await sessionLooksReadyForEligibility(
+        page,
+        avConfig.availity.contentFrameSelector,
+      );
+      if (sessionReady) {
+        logger.info(
+          "Availity: eligibility form appeared after probe — skipping login / OTP",
+        );
+      }
+    }
 
-    const queue = await listPrimaryInsuranceForUser(userId, avConfig.availity.maxPatientsPerRun, appointmentDate, ids);
-    const diag = await getEligibilityQueueDiagnostics(userId, appointmentDate).catch(() => null);
+    if (!sessionReady) {
+      await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
+        syncId,
+        "Availity: logging in",
+      ]);
+      const pageUrl = String(page.url() || "");
+      const skipInitialGoto =
+        /availity\.com/i.test(pageUrl) && !/#\/login\b/i.test(pageUrl);
+      await availityLoginWithApiOtp(page, ctx, availityCreds, logger, {
+        skipInitialGoto,
+        onAwaitingOtp: async () => {
+          await db.query(
+            "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity', message = $2 WHERE id = $1",
+            [syncId, "Availity MFA required: enter OTP code to continue"],
+          );
+        },
+        getOtp: async () => {
+          const code = await getOtpFromRedis(syncId);
+          await db.query(
+            "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity', message = $2 WHERE id = $1",
+            [syncId, "Availity OTP received, validating code"],
+          );
+          return code;
+        },
+      });
+      await ctx.browser.saveStorageState?.();
+      await db.query(
+        "UPDATE sync_requests SET status = 'running', current_stage = 'availity', message = $2 WHERE id = $1",
+        [syncId, "Availity: MFA finished, continuing to eligibility queue"],
+      );
+    } else {
+      await ctx.browser.saveStorageState?.().catch(() => {});
+      await db.query(
+        "UPDATE sync_requests SET status = 'running', current_stage = 'availity', message = $2 WHERE id = $1",
+        [syncId, "Availity: restored session OK, skipping MFA"],
+      );
+    }
+
+    await db.query(
+      "UPDATE sync_requests SET status = 'running', current_stage = 'availity', message = $2 WHERE id = $1",
+      [syncId, "Availity: opening eligibility and processing queue"],
+    );
+
+    const queue = await listPrimaryInsuranceForUser(
+      userId,
+      avConfig.availity.maxPatientsPerRun,
+      appointmentDate,
+      ids,
+    );
+    const diag = await getEligibilityQueueDiagnostics(
+      userId,
+      appointmentDate,
+    ).catch(() => null);
     // eslint-disable-next-line no-console
     console.log(
       `[eligibility] queue summary userId=${userId} date=${appointmentDate} limit=${avConfig.availity.maxPatientsPerRun} queueSize=${queue.length} diag=${
-        diag ? JSON.stringify(diag) : 'unavailable'
+        diag ? JSON.stringify(diag) : "unavailable"
       } sample=${JSON.stringify(
         queue.slice(0, 10).map((r) => ({
           patientId: r.patient_id,
@@ -985,8 +1430,8 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
           insuranceId: r.patient_insurance_id,
           rank: r.coverage_rank,
           hasDob: Boolean(r.date_of_birth),
-          hasMemberId: Boolean(String(r.member_id || '').trim()),
-          hasPayerName: Boolean(String(r.payer_name || '').trim()),
+          hasMemberId: Boolean(String(r.member_id || "").trim()),
+          hasPayerName: Boolean(String(r.payer_name || "").trim()),
         })),
       )}`,
     );
@@ -994,15 +1439,17 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
       // eslint-disable-next-line no-console
       console.warn(
         `[eligibility] empty queue userId=${userId} date=${appointmentDate} limit=${avConfig.availity.maxPatientsPerRun} diag=${
-          diag ? JSON.stringify(diag) : 'unavailable'
+          diag ? JSON.stringify(diag) : "unavailable"
         }`,
       );
-      const openEmptyUi = Boolean(avConfig.availity.openEligibilityAppOnEmptyQueue);
+      const openEmptyUi = Boolean(
+        avConfig.availity.openEligibilityAppOnEmptyQueue,
+      );
       await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
         syncId,
         openEmptyUi
-          ? 'Availity: no patients in queue for this date; opening eligibility app (empty run)'
-          : 'Availity: no patients in queue for this date; skipping eligibility UI',
+          ? "Availity: no patients in queue for this date; opening eligibility app (empty run)"
+          : "Availity: no patients in queue for this date; skipping eligibility UI",
       ]);
       if (openEmptyUi) {
         try {
@@ -1019,8 +1466,8 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
           syncId,
           officeAllySavedAppointments == null
             ? openEmptyUi
-              ? 'Complete: Availity skipped: no patients with DOB+primary insurance+member_id (eligibility UI opened)'
-              : 'Complete: Availity skipped: no patients with DOB+primary insurance+member_id'
+              ? "Complete: Availity skipped: no patients with DOB+primary insurance+member_id (eligibility UI opened)"
+              : "Complete: Availity skipped: no patients with DOB+primary insurance+member_id"
             : openEmptyUi
               ? `Complete: OA rows=${officeAllySavedAppointments}; Availity skipped: no patients with DOB+primary insurance+member_id (eligibility UI opened)`
               : `Complete: OA rows=${officeAllySavedAppointments}; Availity skipped: no patients with DOB+primary insurance+member_id`,
@@ -1049,56 +1496,73 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
           (user_id, patient_id, coverage_rank, payer_name_used, member_id_used, status, message)
          VALUES ($1, $2, $3, $4, $5, 'running', 'started')
          RETURNING id`,
-        [userId, row.patient_id, row.coverage_rank || 1, row.payer_name, row.member_id],
+        [
+          userId,
+          row.patient_id,
+          row.coverage_rank || 1,
+          row.payer_name,
+          row.member_id,
+        ],
       );
       const elRunId = runRes.rows[0].id;
+      let frame = null;
       try {
         const slowEligibilityOpen = eligibilityNavigateCount === 0;
-        await scraper.availityOpenEligibilityApp(ctx, slowEligibilityOpen ? {} : fastEligibilityOpenOpts);
+        await scraper.availityOpenEligibilityApp(
+          ctx,
+          slowEligibilityOpen ? {} : fastEligibilityOpenOpts,
+        );
         eligibilityNavigateCount += 1;
         if (avConfig.availity.resultScreenDelayMs > 0) {
           await sleep(avConfig.availity.resultScreenDelayMs);
         }
-        const frame = await scraper.availityGetContentFrame(ctx);
-        await frame.locator('#organization-field').waitFor({ state: 'visible', timeout: 120000 });
+        frame = await scraper.availityGetContentFrame(ctx);
+        await frame
+          .locator("#organization-field")
+          .waitFor({ state: "visible", timeout: 120000 });
         await scraper.availityFillInquiryForm(ctx, frame, patientPayload);
         await scraper.availitySubmitInquiry(ctx, frame);
         await scraper.availityWaitForResponse(ctx, frame);
         if (avConfig.availity.resultScreenDelayMs > 0) {
           await sleep(avConfig.availity.resultScreenDelayMs);
         }
-        const snap = await scraper.availityParseResponseSnapshot(frame);
+        const snap = await scraper.availityParseResponseSnapshot(
+          frame,
+          logger,
+        );
         scraper.validateEligibilitySnapshotOrThrow(snap);
+        const benefitsJsonPath = await scraper
+          .saveEligibilityBenefitsDebugJson(snap, {
+            syncId,
+            patientId: row.patient_id,
+            elRunId,
+            outcome: "success",
+            logger,
+          })
+          .catch(() => null);
+        const resultCapture = await captureAvailityEligibilityCheckArtifacts({
+          page,
+          frame,
+          syncId,
+          elRunId,
+          patientId: row.patient_id,
+          outcome: "success",
+          logger,
+          contentFrameSelector: avConfig.availity.contentFrameSelector,
+        });
         // eslint-disable-next-line no-console
         console.log(
-          `[eligibility] snapshot memberId=${(snap.labels && snap.labels['Member ID']) || ''} patientName=${snap.patientNameOnFile || ''} hints=${JSON.stringify(snap.parseHints || {})}`,
+          `[eligibility] snapshot memberId=${(snap.labels && snap.labels["Member ID"]) || ""} patientName=${snap.patientNameOnFile || ""} hints=${JSON.stringify(snap.parseHints || {})}`,
         );
-        const resultRow = scraper.mapAvailitySnapshotToResultRow(snap);
-        const financials = extractFinancialFields(resultRow, snap);
-        await db.query(
-          `INSERT INTO availity_eligibility_results
-            (run_id, coverage_status_text, is_active, member_id, payer_id, patient_name_on_file, benefit_line, date_of_service, transaction_date, insurance_type, plan_product, coverage_level, copay_amount, deductible_amount, coinsurance, oop_remaining, raw_snapshot)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-          [
+        const availityRepo = await loadAvailityEligibilityRepo();
+        const bundle = scraper.buildAvailityDbBundle(snap, { benefitsJsonPath });
+        const { resultId, serviceCount } =
+          await availityRepo.insertAvailityEligibilityBundle(
+            db,
             elRunId,
-            resultRow.coverageStatusText,
-            resultRow.isActive,
-            resultRow.memberId,
-            resultRow.payerId,
-            resultRow.patientNameOnFile,
-            resultRow.benefitLine,
-            resultRow.dateOfService,
-            resultRow.transactionDate,
-            resultRow.insuranceType,
-            resultRow.planProduct,
-            resultRow.coverageLevel,
-            financials.copayAmount,
-            financials.deductibleAmount,
-            financials.coinsurance,
-            financials.oopRemaining,
-            resultRow.rawSnapshot || {},
-          ],
-        );
+            row.patient_id,
+            bundle,
+          );
         await db.query(
           "UPDATE availity_eligibility_runs SET status = 'success', finished_at = NOW(), message = 'ok' WHERE id = $1",
           [elRunId],
@@ -1106,27 +1570,55 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
         done += 1;
         results.push({
           runId: elRunId,
+          resultId,
           patientId: row.patient_id,
           patientInsuranceId: row.patient_insurance_id,
-          status: 'success',
-          coverageStatusText: resultRow.coverageStatusText,
-          isActive: resultRow.isActive,
-          copayAmount: financials.copayAmount,
-          deductibleAmount: financials.deductibleAmount,
-          coinsurance: financials.coinsurance,
-          oopRemaining: financials.oopRemaining,
+          status: "success",
+          coverageStatusText: bundle.result.coverageStatusText,
+          isActive: bundle.result.isActive,
+          benefitServiceCount: serviceCount,
+          annualDeductibleTotalAmount: bundle.result.annualDeductibleTotal,
+          annualDeductibleRemainingAmount: bundle.result.annualDeductibleRemaining,
+          oopRemainingAmount: bundle.result.oopRemaining,
+          resultCapture,
+          benefitsJsonPath,
         });
       } catch (e) {
-        await db.query("UPDATE availity_eligibility_runs SET status = 'failed', finished_at = NOW(), message = $2 WHERE id = $1", [
+        if (frame) {
+          await scraper
+            .saveEligibilityBenefitsDebugJson(
+              { labels: {}, parseHints: { parseIncomplete: true }, alertText: e?.message },
+              {
+                syncId,
+                patientId: row.patient_id,
+                elRunId,
+                outcome: "failed",
+                logger,
+              },
+            )
+            .catch(() => null);
+        }
+        const resultCapture = await captureAvailityEligibilityCheckArtifacts({
+          page,
+          frame,
+          syncId,
           elRunId,
-          e.message,
-        ]);
+          patientId: row.patient_id,
+          outcome: "failed",
+          logger,
+          contentFrameSelector: avConfig.availity.contentFrameSelector,
+        });
+        await db.query(
+          "UPDATE availity_eligibility_runs SET status = 'failed', finished_at = NOW(), message = $2 WHERE id = $1",
+          [elRunId, e.message],
+        );
         results.push({
           runId: elRunId,
           patientId: row.patient_id,
           patientInsuranceId: row.patient_insurance_id,
-          status: 'failed',
+          status: "failed",
           error: e.message,
+          resultCapture,
         });
         if (avConfig.availity.stopOnFirstError) {
           throw e;
@@ -1143,21 +1635,22 @@ async function runAvailityStage({ userId, syncId, availityCreds, appointmentDate
           : `Complete: OA appts=${officeAllySavedAppointments}; Availity processed=${queue.length} (ok=${done})`,
       ],
     );
-    return { queueSize: queue.length, processed: queue.length, successCount: done, results };
+    return {
+      queueSize: queue.length,
+      processed: queue.length,
+      successCount: done,
+      results,
+    };
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
   }
 }
 
-async function runAvailityClaimStatusStage({
-  userId,
-  syncId,
-  availityCreds,
-}) {
+async function runAvailityClaimStatusStage({ userId, syncId, availityCreds }) {
   const isNavigationShellRoot = (url) =>
     /\/static\/web\/onb\/onboarding-ui-apps\/navigation\/#\/?$/i.test(
-      String(url || '').split('?')[0],
+      String(url || "").split("?")[0],
     );
   const logger = createLogger();
   const avConfig = buildAvailityConfig({
@@ -1167,7 +1660,7 @@ async function runAvailityClaimStatusStage({
 
   await db.query(
     "UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
-    [syncId, 'Availity claim status: starting'],
+    [syncId, "Availity claim status: starting"],
   );
 
   const queue = await listClaimStatusQueueForUser(
@@ -1177,7 +1670,10 @@ async function runAvailityClaimStatusStage({
   if (!queue.length) {
     await db.query(
       "UPDATE sync_requests SET status = 'success', current_stage = 'complete', message = $2, finished_at = NOW() WHERE id = $1",
-      [syncId, 'Complete: claim status skipped, no visit-date based queue rows'],
+      [
+        syncId,
+        "Complete: claim status skipped, no visit-date based queue rows",
+      ],
     );
     await cacheService.invalidateUserDashboard(userId);
     return {
@@ -1193,12 +1689,23 @@ async function runAvailityClaimStatusStage({
     avConfig.availity.storageStatePath,
     userId,
   );
-  const headless = String(process.env.HEADLESS || 'true').toLowerCase() === 'true';
+  const headless =
+    String(process.env.HEADLESS || "true").toLowerCase() === "true";
   const slowMo = Number(process.env.SLOW_MO_MS || 0);
-  const browser = await chromium.launch({ headless, slowMo: slowMo || undefined });
-  const hasStoredState = Boolean(storageStatePath)
-    && (await fs.promises.stat(storageStatePath).then(() => true).catch(() => false));
-  const contextOpts = { viewport: { width: 1400, height: 900 }, acceptDownloads: true };
+  const browser = await chromium.launch({
+    headless,
+    slowMo: slowMo || undefined,
+  });
+  const hasStoredState =
+    Boolean(storageStatePath) &&
+    (await fs.promises
+      .stat(storageStatePath)
+      .then(() => true)
+      .catch(() => false));
+  const contextOpts = {
+    viewport: { width: 1400, height: 900 },
+    acceptDownloads: true,
+  };
   if (hasStoredState) {
     contextOpts.storageState = storageStatePath;
   }
@@ -1215,25 +1722,37 @@ async function runAvailityClaimStatusStage({
     if (hasStoredState) {
       await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
         syncId,
-        'Availity claim status: restoring saved session',
+        "Availity claim status: restoring saved session",
       ]);
       // Try claim app first; if session is still valid, skip login+OTP wait completely.
-      await page.goto(avConfig.availity.claimStatusAppUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 120000,
-      }).catch(() => {});
-      await page.waitForLoadState('networkidle', { timeout: 120000 }).catch(() => {});
-      logger.info(`Availity claim status: current URL after session-restore open=${page.url()}`);
+      await page
+        .goto(avConfig.availity.claimStatusAppUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: 120000,
+        })
+        .catch(() => {});
+      await page
+        .waitForLoadState("networkidle", { timeout: 120000 })
+        .catch(() => {});
+      logger.info(
+        `Availity claim status: current URL after session-restore open=${page.url()}`,
+      );
       if (isNavigationShellRoot(page.url())) {
         logger.warn(
           `Availity claim status: detected navigation shell root, forcing claim URL=${avConfig.availity.claimStatusAppUrl}`,
         );
-        await page.goto(avConfig.availity.claimStatusAppUrl, {
-          waitUntil: 'domcontentloaded',
-          timeout: 120000,
-        }).catch(() => {});
-        await page.waitForLoadState('networkidle', { timeout: 120000 }).catch(() => {});
-        logger.info(`Availity claim status: URL after forced switch=${page.url()}`);
+        await page
+          .goto(avConfig.availity.claimStatusAppUrl, {
+            waitUntil: "domcontentloaded",
+            timeout: 120000,
+          })
+          .catch(() => {});
+        await page
+          .waitForLoadState("networkidle", { timeout: 120000 })
+          .catch(() => {});
+        logger.info(
+          `Availity claim status: URL after forced switch=${page.url()}`,
+        );
       }
       sessionReady = await isClaimStatusFormVisible(
         page,
@@ -1243,54 +1762,80 @@ async function runAvailityClaimStatusStage({
         `Availity claim status: session visibility check after restore=${sessionReady} url=${page.url()}`,
       );
       if (sessionReady) {
-        logger.info('Availity claim status: active session restored; skipping login flow');
+        logger.info(
+          "Availity claim status: active session restored; skipping login flow",
+        );
       }
     }
 
     if (!sessionReady) {
       await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
         syncId,
-        'Availity claim status: logging in',
+        "Availity claim status: logging in",
       ]);
-      await availityLoginWithApiOtp(page, { config: avConfig }, availityCreds, logger, {
-        onAwaitingOtp: async () => {
-          await db.query(
-            "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
-            [syncId, 'Availity MFA required: enter OTP code to continue claim status sync'],
-          );
+      await availityLoginWithApiOtp(
+        page,
+        { config: avConfig },
+        availityCreds,
+        logger,
+        {
+          onAwaitingOtp: async () => {
+            await db.query(
+              "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
+              [
+                syncId,
+                "Availity MFA required: enter OTP code to continue claim status sync",
+              ],
+            );
+          },
+          getOtp: async () => {
+            const code = await getOtpFromRedis(syncId);
+            await db.query(
+              "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
+              [
+                syncId,
+                "Availity OTP received, validating code for claim status flow",
+              ],
+            );
+            return code;
+          },
         },
-        getOtp: async () => {
-          const code = await getOtpFromRedis(syncId);
-          await db.query(
-            "UPDATE sync_requests SET status = 'awaiting_otp', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
-            [syncId, 'Availity OTP received, validating code for claim status flow'],
-          );
-          return code;
-        },
-      });
+      );
 
       // Login may land on dashboard/navigation shell. Force claim status app URL
       // before validating claim-form session readiness.
       await db.query("UPDATE sync_requests SET message = $2 WHERE id = $1", [
         syncId,
-        'Availity claim status: navigating to claim status app after login',
+        "Availity claim status: navigating to claim status app after login",
       ]);
-      await page.goto(avConfig.availity.claimStatusAppUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 120000,
-      }).catch(() => {});
-      await page.waitForLoadState('networkidle', { timeout: 120000 }).catch(() => {});
-      logger.info(`Availity claim status: current URL after login=${page.url()}`);
+      await page
+        .goto(avConfig.availity.claimStatusAppUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: 120000,
+        })
+        .catch(() => {});
+      await page
+        .waitForLoadState("networkidle", { timeout: 120000 })
+        .catch(() => {});
+      logger.info(
+        `Availity claim status: current URL after login=${page.url()}`,
+      );
       if (isNavigationShellRoot(page.url())) {
         logger.warn(
           `Availity claim status: still on navigation shell root, forcing claim URL=${avConfig.availity.claimStatusAppUrl}`,
         );
-        await page.goto(avConfig.availity.claimStatusAppUrl, {
-          waitUntil: 'domcontentloaded',
-          timeout: 120000,
-        }).catch(() => {});
-        await page.waitForLoadState('networkidle', { timeout: 120000 }).catch(() => {});
-        logger.info(`Availity claim status: URL after forced post-login switch=${page.url()}`);
+        await page
+          .goto(avConfig.availity.claimStatusAppUrl, {
+            waitUntil: "domcontentloaded",
+            timeout: 120000,
+          })
+          .catch(() => {});
+        await page
+          .waitForLoadState("networkidle", { timeout: 120000 })
+          .catch(() => {});
+        logger.info(
+          `Availity claim status: URL after forced post-login switch=${page.url()}`,
+        );
       }
     }
 
@@ -1301,18 +1846,20 @@ async function runAvailityClaimStatusStage({
     );
     if (!hasSession) {
       throw new Error(
-        'Availity claim status flow requires an authenticated session. Login/MFA session was not established.',
+        "Availity claim status flow requires an authenticated session. Login/MFA session was not established.",
       );
     }
     if (storageStatePath) {
-      await fs.promises.mkdir(path.dirname(storageStatePath), { recursive: true });
+      await fs.promises.mkdir(path.dirname(storageStatePath), {
+        recursive: true,
+      });
       await context.storageState({ path: storageStatePath });
     }
 
-    await db.query("UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1", [
-      syncId,
-      `Availity claim status: processing queue rows=${queue.length}`,
-    ]);
+    await db.query(
+      "UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
+      [syncId, `Availity claim status: processing queue rows=${queue.length}`],
+    );
 
     let processedPatients = 0;
     let paidRowsProcessed = 0;
@@ -1321,27 +1868,36 @@ async function runAvailityClaimStatusStage({
 
     for (const claimRow of queue) {
       processedPatients += 1;
-      await db.query("UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1", [
-        syncId,
-        `Availity claim status: patient ${processedPatients}/${queue.length} pm_patient_id=${claimRow.pm_patient_id}`,
-      ]);
+      await db.query(
+        "UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
+        [
+          syncId,
+          `Availity claim status: patient ${processedPatients}/${queue.length} pm_patient_id=${claimRow.pm_patient_id}`,
+        ],
+      );
       logger.info(
         `Availity claim status: opening app for pm_patient_id=${claimRow.pm_patient_id}`,
       );
       try {
         const frame = await openClaimStatusApp(page, avConfig, logger);
-        await db.query("UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1", [
-          syncId,
-          `Availity claim status: filling claim form for pm_patient_id=${claimRow.pm_patient_id}`,
-        ]);
+        await db.query(
+          "UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
+          [
+            syncId,
+            `Availity claim status: filling claim form for pm_patient_id=${claimRow.pm_patient_id}`,
+          ],
+        );
         logger.info(
           `Availity claim status: filling required fields pm_patient_id=${claimRow.pm_patient_id}`,
         );
         await fillClaimStatusForm(frame, claimRow, avConfig);
-        await db.query("UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1", [
-          syncId,
-          `Availity claim status: submitting search for pm_patient_id=${claimRow.pm_patient_id}`,
-        ]);
+        await db.query(
+          "UPDATE sync_requests SET status = 'running', current_stage = 'availity_claim_status', message = $2 WHERE id = $1",
+          [
+            syncId,
+            `Availity claim status: submitting search for pm_patient_id=${claimRow.pm_patient_id}`,
+          ],
+        );
         logger.info(
           `Availity claim status: submitting form pm_patient_id=${claimRow.pm_patient_id}`,
         );
@@ -1372,19 +1928,21 @@ async function runAvailityClaimStatusStage({
             filePath: file.filePath,
             fileName: file.fileName,
             downloadedAt: file.downloadedAt,
-            status: 'pending',
+            status: "pending",
           });
         }
       } catch (patientErr) {
-        await db.query(
-          "UPDATE sync_requests SET status = 'failed', current_stage = 'availity_claim_status', message = $2, finished_at = NOW() WHERE id = $1",
-          [
-            syncId,
-            `Availity claim status failed for pm_patient_id=${claimRow.pm_patient_id}: ${
-              patientErr?.message || String(patientErr)
-            }`,
-          ],
-        ).catch(() => {});
+        await db
+          .query(
+            "UPDATE sync_requests SET status = 'failed', current_stage = 'availity_claim_status', message = $2, finished_at = NOW() WHERE id = $1",
+            [
+              syncId,
+              `Availity claim status failed for pm_patient_id=${claimRow.pm_patient_id}: ${
+                patientErr?.message || String(patientErr)
+              }`,
+            ],
+          )
+          .catch(() => {});
         logger.warn(
           `Availity claim status: failed for pm_patient_id=${claimRow.pm_patient_id} err=${
             patientErr?.message || String(patientErr)
@@ -1423,7 +1981,13 @@ async function runAvailityClaimStatusStage({
  * @param {{username:string,password:string}} params.officeAllyCreds
  * @param {{username:string,password:string}} params.availityCreds
  */
-async function runEndToEndSync({ userId, appointmentDate, syncId, officeAllyCreds, availityCreds }) {
+async function runEndToEndSync({
+  userId,
+  appointmentDate,
+  syncId,
+  officeAllyCreds,
+  availityCreds,
+}) {
   const { savedAppointments } = await runOfficeAllyStage({
     userId,
     appointmentDate,

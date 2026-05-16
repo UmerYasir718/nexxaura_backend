@@ -68,7 +68,8 @@ export async function runAvailityEligibility(ctx) {
 
       try {
         const maxAttempts = 2;
-        let mapped = null;
+        let snap = null;
+        let benefitsJsonPath = null;
         let lastErr = null;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -102,10 +103,18 @@ export async function runAvailityEligibility(ctx) {
               await sleep(config.availity.resultScreenDelayMs);
             }
 
-            const snap = await av.availityParseResponseSnapshot(frame);
+            snap = await av.availityParseResponseSnapshot(frame, logger);
             av.validateEligibilitySnapshotOrThrow(snap);
+            benefitsJsonPath = await av
+              .saveEligibilityBenefitsDebugJson(snap, {
+                syncId: process.env.AVAILITY_DEBUG_SYNC_ID || "adhoc",
+                patientId: row.pm_patient_id,
+                elRunId: runId,
+                outcome: "success",
+                logger,
+              })
+              .catch(() => null);
 
-            mapped = av.mapAvailitySnapshotToResultRow(snap);
             lastErr = null;
             break;
           } catch (e) {
@@ -123,8 +132,14 @@ export async function runAvailityEligibility(ctx) {
           }
         }
 
-        if (!mapped && lastErr) throw lastErr;
-        await availityEligibilityRepo.insertAvailityResult(db, runId, mapped);
+        if (lastErr || !snap) throw lastErr || new Error("No eligibility snapshot");
+        const bundle = av.buildAvailityDbBundle(snap, { benefitsJsonPath });
+        await availityEligibilityRepo.insertAvailityEligibilityBundle(
+          db,
+          runId,
+          row.patient_id,
+          bundle,
+        );
         await availityEligibilityRepo.finishAvailityRun(
           db,
           runId,
@@ -133,7 +148,7 @@ export async function runAvailityEligibility(ctx) {
         );
         successes += 1;
         logger.info(
-          `Availity OK pm_patient_id=${row.pm_patient_id} active=${mapped.isActive}`,
+          `Availity OK pm_patient_id=${row.pm_patient_id} active=${bundle.result.isActive}`,
         );
         await browser.screenshot(`availity-result-${row.pm_patient_id}`);
         await browser.saveStorageState?.().catch(() => {});

@@ -97,7 +97,7 @@ async function getAvailityRemittanceEobExport(req, res, next) {
   }
 }
 
-/** POST body: { "patientId": "<uuid>" } — full patient + insurance + appointments + Availity runs/results (includes raw payloads). */
+/** POST body: { "patientId": "<uuid>" } — patient, insurance, appointments, eligibility summary + per-service benefits. */
 async function postPatientInsuranceEligibilityDetail(req, res, next) {
   try {
     const patientId = req.body?.patientId ?? req.body?.patient_id;
@@ -112,7 +112,7 @@ async function postPatientInsuranceEligibilityDetail(req, res, next) {
     if (!bundle) {
       return res.status(404).json({ error: 'Patient not found' });
     }
-    return res.json(bundle);
+    return res.json(stripIntegrationRaw(bundle));
   } catch (e) {
     return next(e);
   }
