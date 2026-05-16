@@ -231,19 +231,54 @@ async function pageLooksLikePostMfaSession(page, contentFrameSel) {
   return false;
 }
 
+function isAvailityNavigationShellUrl(url) {
+  return /static\/web\/onb\/onboarding-ui-apps\/navigation/i.test(String(url || ''));
+}
+
+/**
+ * Password login often lands on Essentials navigation (#/) without showing MFA.
+ * Open the target micro-app from that shell instead of polling forever.
+ * @returns {Promise<boolean>}
+ */
+async function proceedFromAuthenticatedShellToTargetApp(page, av, logger, targetApp) {
+  if (await pageNeedsAvailityLogin(page)) return false;
+  if (await pageLooksLikeMfaChallenge(page)) return false;
+
+  const contentFrameSel = av.contentFrameSelector;
+  if (targetApp === 'claimStatus') {
+    if (await sessionLooksReadyForClaimStatus(page, contentFrameSel)) return true;
+  } else if (await sessionLooksReadyForEligibility(page, contentFrameSel)) {
+    return true;
+  }
+
+  const onShell =
+    isAvailityNavigationShellUrl(page.url()) ||
+    (await pageLooksLikeAuthenticatedAvailityShell(page));
+  if (!onShell) return false;
+
+  logger?.info?.(
+    `MFA: authenticated navigation shell — opening ${targetApp} (url=${page.url()})`,
+  );
+  return targetApp === 'claimStatus'
+    ? navigateToClaimStatusAfterLogin(page, av, logger, { maxWaitMs: 60000 })
+    : navigateToEligibilityAfterLogin(page, av, logger, { maxWaitMs: 60000 });
+}
+
 /**
  * After OTP submit Availity may stay on fr-ui/#/login briefly before redirect.
  * @returns {Promise<boolean>}
  */
 async function waitForAvailitySessionAfterMfa(
   page,
-  contentFrameSel,
+  av,
   logger,
   maxWaitMs = 120000,
   targetApp = 'eligibility',
 ) {
+  const contentFrameSel = av.contentFrameSelector;
   const deadline = Date.now() + maxWaitMs;
   let lastDiagLog = 0;
+  let lastNavigateAttempt = 0;
   while (Date.now() < deadline) {
     if (targetApp === 'claimStatus') {
       if (await sessionLooksReadyForClaimStatus(page, contentFrameSel)) {
@@ -257,6 +292,18 @@ async function waitForAvailitySessionAfterMfa(
       logger?.info?.(`MFA: authenticated shell detected (${page.url()})`);
       return true;
     }
+
+    if (
+      Date.now() - lastNavigateAttempt > 8000 &&
+      (await pageLooksLikeAuthenticatedAvailityShell(page)) &&
+      !(await pageLooksLikeMfaChallenge(page))
+    ) {
+      lastNavigateAttempt = Date.now();
+      if (await proceedFromAuthenticatedShellToTargetApp(page, av, logger, targetApp)) {
+        return true;
+      }
+    }
+
     if (Date.now() - lastDiagLog > 15_000) {
       const mfa = await pageLooksLikeMfaChallenge(page);
       const loginForm = await loginCredentialFormVisible(page);
@@ -548,6 +595,10 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
     } else {
       logger?.info?.('MFA: authenticator method UI not found — checking session');
       if (await postMfaSessionReadyForApp(page, av.contentFrameSelector, targetApp)) return;
+      if (await proceedFromAuthenticatedShellToTargetApp(page, av, logger, targetApp)) {
+        logger?.info?.('MFA: opened target app from navigation shell (no MFA step)');
+        return;
+      }
     }
   }
 
@@ -559,15 +610,7 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
     'input#code,input[inputmode="numeric"],input[name="otp"],input[name="code"],input[autocomplete="one-time-code"],input[aria-label*="code" i],input[placeholder*="code" i]';
 
   const finishIfSessionReady = async () => {
-    if (
-      await waitForAvailitySessionAfterMfa(
-        page,
-        av.contentFrameSelector,
-        logger,
-        8000,
-        targetApp,
-      )
-    ) {
+    if (await waitForAvailitySessionAfterMfa(page, av, logger, 8000, targetApp)) {
       logger?.info?.('MFA: complete');
       await tryClickCookieConsent(page, logger);
       return true;
@@ -578,6 +621,15 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
   // eslint-disable-next-line no-constant-condition
   while (true) {
     if (await finishIfSessionReady()) return;
+
+    if (
+      !(await pageLooksLikeMfaChallenge(page)) &&
+      (await proceedFromAuthenticatedShellToTargetApp(page, av, logger, targetApp))
+    ) {
+      logger?.info?.('MFA: complete after opening target app from navigation shell');
+      await tryClickCookieConsent(page, logger);
+      return;
+    }
 
     if (Date.now() - lastStepLog > 30_000) {
       logger?.info?.(
@@ -619,7 +671,7 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
       otpSubmitted = true;
       await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
       await page.waitForLoadState('networkidle', { timeout: 45000 }).catch(() => {});
-      if (await waitForAvailitySessionAfterMfa(page, av.contentFrameSelector, logger, 90000, targetApp)) {
+      if (await waitForAvailitySessionAfterMfa(page, av, logger, 90000, targetApp)) {
         logger?.info?.('MFA: complete after OTP');
         await tryClickCookieConsent(page, logger);
         return;
@@ -628,7 +680,7 @@ async function availityPostLoginMfaWithApiOtp(page, logger, av, { onAwaitingOtp,
     }
 
     if (otpSubmitted) {
-      if (await waitForAvailitySessionAfterMfa(page, av.contentFrameSelector, logger, 15000, targetApp)) {
+      if (await waitForAvailitySessionAfterMfa(page, av, logger, 15000, targetApp)) {
         logger?.info?.('MFA: complete (post-OTP, challenge cleared)');
         await tryClickCookieConsent(page, logger);
         return;
@@ -754,6 +806,16 @@ async function availityLoginWithApiOtp(page, ctxLike, creds, logger, opts = {}) 
 
   if (await sessionReadyForApp()) {
     logger?.info?.('Availity: signed in without MFA challenge; skipping OTP');
+    return;
+  }
+
+  if (
+    !(await pageLooksLikeMfaChallenge(page)) &&
+    (await proceedFromAuthenticatedShellToTargetApp(page, av, logger, targetApp))
+  ) {
+    logger?.info?.(
+      `Availity: signed in to navigation shell without MFA; ${targetApp} app opened`,
+    );
     return;
   }
 
